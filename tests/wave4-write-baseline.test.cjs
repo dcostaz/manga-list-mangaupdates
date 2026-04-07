@@ -461,6 +461,151 @@ test('wave4 write flow - setUserProgress updates list and rating and reports upd
   assert.deepEqual(ratingCall.payload, { rating: 9 });
 });
 
+test('wave4 write flow - subscribeToReadingList adds missing series and applies mapped status list', async () => {
+  const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.getHandler = (url) => {
+    if (url.includes('/lists/series/61')) {
+      const error = new Error('not found');
+      error.response = { status: 404 };
+      throw error;
+    }
+    if (url.endsWith('/lists')) {
+      return [
+        { list_id: 10, title: 'Reading' },
+        { list_id: 20, title: 'Completed' },
+      ];
+    }
+    return [];
+  };
+
+  httpHooks.putHandler = (url) => {
+    if (url.includes('/rating')) {
+      return { status: 200, data: { ok: true } };
+    }
+    return {
+      data: {
+        context: {
+          session_token: 'wave4-token',
+        },
+      },
+    };
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.getUserLists.template': '${baseUrl}/lists',
+      'api.endpoints.listGetSeriesItem.template': '${baseUrl}/lists/series/${series_id}',
+      'api.endpoints.listAddSeries.template': '${baseUrl}/lists/series',
+      'api.endpoints.updateSerieRating.template': '${baseUrl}/series/${series_id}/rating',
+      'statusMapping.READING': 10,
+      'statusMapping.COMPLETED': 20,
+    },
+    httpClient: client,
+    cacheAdapter,
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const result = await wrapper.subscribeToReadingList({
+    seriesId: 61,
+    status: 'COMPLETED',
+    chapter: 20,
+    volume: 5,
+    rating: 8,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.mode, 'added');
+  assert.equal(result.listId, 20);
+  const addCall = httpHooks.postCalls.find((call) => String(call.url).endsWith('/lists/series'));
+  assert.equal(Boolean(addCall), true);
+  assert.deepEqual(addCall.payload[0], {
+    series: { id: 61 },
+    list_id: 20,
+    status: {
+      chapter: 20,
+      volume: 5,
+    },
+  });
+  const ratingCall = httpHooks.putCalls.find((call) => String(call.url).includes('/rating'));
+  assert.equal(Boolean(ratingCall), true);
+  assert.equal(cacheHooks.deletedKeys.includes('getSeriesListStatus%%61'), true);
+});
+
+test('wave4 write flow - subscribeToReadingList updates existing series and tolerates rating failure', async () => {
+  const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.getHandler = (url) => {
+    if (url.includes('/lists/series/62')) {
+      return {
+        list_id: 10,
+        status: {
+          chapter: 2,
+          volume: 1,
+        },
+      };
+    }
+    if (url.endsWith('/lists')) {
+      return [
+        { list_id: 10, title: 'Reading' },
+      ];
+    }
+    return [];
+  };
+
+  httpHooks.putHandler = (url) => {
+    if (url.includes('/rating')) {
+      return { status: 400, data: { reason: 'bad rating' } };
+    }
+    return {
+      data: {
+        context: {
+          session_token: 'wave4-token',
+        },
+      },
+    };
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.getUserLists.template': '${baseUrl}/lists',
+      'api.endpoints.listGetSeriesItem.template': '${baseUrl}/lists/series/${series_id}',
+      'api.endpoints.listUpdateSeries.template': '${baseUrl}/lists/series/update',
+      'api.endpoints.updateSerieRating.template': '${baseUrl}/series/${series_id}/rating',
+      'statusMapping.READING': 10,
+    },
+    httpClient: client,
+    cacheAdapter,
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const result = await wrapper.subscribeToReadingList({
+    seriesId: 62,
+    status: 'READING',
+    chapter: 3,
+    rating: 4,
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.mode, 'updated');
+  const updateCall = httpHooks.postCalls.find((call) => String(call.url).endsWith('/lists/series/update'));
+  assert.equal(Boolean(updateCall), true);
+  assert.deepEqual(updateCall.payload[0], {
+    series: { id: 62 },
+    list_id: 10,
+    status: {
+      chapter: 3,
+    },
+  });
+  assert.equal(cacheHooks.deletedKeys.includes('getSeriesListStatus%%62'), true);
+});
+
 test('wave4 write flow - updateSeries patches series payload and invalidates detail cache', async () => {
   const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
   const { client, hooks: httpHooks } = createMockHttpClient();

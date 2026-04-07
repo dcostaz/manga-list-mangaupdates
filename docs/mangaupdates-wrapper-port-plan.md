@@ -213,9 +213,11 @@ Status:
 - In progress (started 2026-04-06).
 - Added baseline mutation behavior for:
 	`updateSeries`, `updateSeriesCover`, `deleteSeriesCover`, `updateListSeries`,
-	`addListSeries`, `updateStatus`, `updateSerieRating`, and `setUserProgress`.
+	`addListSeries`, `updateStatus`, `updateSerieRating`, `subscribeToReadingList`,
+	and `setUserProgress`.
 - Added Wave 4 baseline tests for payload shaping, status-list resolution,
-	series mutation, cover mutation, rating mutation, and progress push outcomes.
+	series mutation, cover mutation, subscription upsert, rating mutation,
+	and progress push outcomes.
 
 Functions:
 1. updateSeries

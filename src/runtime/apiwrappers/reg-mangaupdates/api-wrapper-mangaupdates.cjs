@@ -1549,6 +1549,115 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * @param {{
+   *  seriesId: string|number,
+   *  status?: TrackerReadingStatus,
+   *  chapter?: number,
+   *  volume?: number,
+   *  rating?: number,
+   * }} subscriptionData
+   * @returns {Promise<{ success: boolean, mode: 'added'|'updated', listId: number|null }>} 
+   */
+  async subscribeToReadingList(subscriptionData) {
+    if (!subscriptionData || typeof subscriptionData !== 'object') {
+      throw new Error('(subscribeToReadingList) subscriptionData is required');
+    }
+
+    const numericSeriesId = Number(subscriptionData.seriesId);
+    if (!Number.isFinite(numericSeriesId) || numericSeriesId <= 0) {
+      throw new Error('(subscribeToReadingList) Invalid seriesId');
+    }
+
+    const userLists = await this.getUserLists();
+    if (!Array.isArray(userLists) || userLists.length === 0) {
+      throw new Error('(subscribeToReadingList) Unable to fetch user lists.');
+    }
+
+    let targetListId = null;
+    if (subscriptionData.status) {
+      const mappedListId = this._resolveSettingValue(`statusMapping.${subscriptionData.status}`);
+      if (typeof mappedListId === 'number') {
+        targetListId = mappedListId;
+      }
+    }
+
+    let targetList = targetListId !== null
+      ? userLists.find((list) => list && typeof list === 'object' && list.list_id === targetListId)
+      : null;
+
+    if (!targetList) {
+      targetList = userLists.find((list) => {
+        if (!list || typeof list !== 'object') {
+          return false;
+        }
+
+        return list.title === 'Reading List'
+          || list.title === 'reading list'
+          || list.type === 'read';
+      }) || userLists[0];
+    }
+
+    if (!targetList || typeof targetList !== 'object' || typeof targetList.list_id !== 'number') {
+      throw new Error('(subscribeToReadingList) Unable to find target reading list.');
+    }
+
+    /** @type {Record<string, number>} */
+    const statusObject = {};
+    if (typeof subscriptionData.chapter === 'number' && subscriptionData.chapter >= 0) {
+      statusObject.chapter = Number(subscriptionData.chapter);
+    }
+    if (typeof subscriptionData.volume === 'number' && subscriptionData.volume >= 0) {
+      statusObject.volume = Number(subscriptionData.volume);
+    }
+
+    /** @type {Record<string, unknown>} */
+    const listSeriesPayload = {
+      series: { id: numericSeriesId },
+      list_id: targetList.list_id,
+    };
+
+    if (Object.keys(statusObject).length > 0) {
+      listSeriesPayload.status = statusObject;
+    }
+
+    const existingStatus = await this.getSeriesListStatus(numericSeriesId);
+    const writeResult = existingStatus
+      ? await this.updateListSeries([listSeriesPayload])
+      : await this.addListSeries([listSeriesPayload]);
+
+    if (writeResult.status && writeResult.status >= 400) {
+      const reason = writeResult && typeof writeResult === 'object' && writeResult.data && typeof writeResult.data === 'object'
+        ? writeResult.data.reason
+        : null;
+      throw new Error(
+        existingStatus
+          ? `(subscribeToReadingList) Failed to update reading list: ${typeof reason === 'string' ? reason : 'Unknown error'}`
+          : `(subscribeToReadingList) Failed to add to reading list: ${typeof reason === 'string' ? reason : 'Unknown error'}`,
+      );
+    }
+
+    if (typeof subscriptionData.rating === 'number' && subscriptionData.rating > 0) {
+      const ratingResult = await this.updateSerieRating(String(numericSeriesId), {
+        rating: Number(subscriptionData.rating),
+      });
+
+      if (ratingResult.status && ratingResult.status >= 400) {
+        // Keep subscription successful even when rating update fails.
+      }
+    }
+
+    if (this.cacheAdapter && typeof this.cacheAdapter.deleteValue === 'function') {
+      await this.cacheAdapter.deleteValue(`getSeriesListStatus%%${numericSeriesId}`);
+    }
+
+    return {
+      success: true,
+      mode: existingStatus ? 'updated' : 'added',
+      listId: targetList.list_id,
+    };
+  }
+
+  /**
    * @param {string|number} seriesId
    * @param {TrackerUserProgress} [progress]
    * @returns {Promise<Record<string, unknown>>}
