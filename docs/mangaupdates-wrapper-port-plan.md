@@ -97,12 +97,15 @@ Search and cover orchestration:
 
 ## Current Runtime Target Status
 Implemented now in target runtime wrapper:
-1. static init
-2. searchTrackersRaw (placeholder)
-3. getSeriesByIdRaw (placeholder)
-4. getUserProgressRaw (placeholder)
+1. Wave 0 contract harness and baseline settings governance
+2. Wave 1 runtime init/interceptor/credentials baseline
+3. Wave 2 token/cache lifecycle baseline
+4. Wave 3 read-path and entity lookup baseline
+5. Wave 4 write-path mutation baseline, including series and cover mutations
+6. Wave 5 search and cover orchestration baseline (`searchTrackers`,
+	`searchTrackersRaw`, `_findExactMatch`, `searchCovers`, `downloadCover`)
 
-Everything else is pending port.
+Remaining work is hardening parity gaps and any optional host-only helpers.
 
 ## Port Waves
 
@@ -235,6 +238,11 @@ Exit gate:
 ### Wave 5: Search Orchestration and Cover Transfer
 Objective:
 - Port high-level search matching and cover transfer operations.
+
+Status:
+- In progress (started 2026-04-07).
+- Added Wave 5 baseline behavior for search orchestration and cover transfer.
+- Added `tests/wave5-search-cover-baseline.test.cjs` to lock match/search/cover flows.
 
 Functions:
 1. searchTrackers

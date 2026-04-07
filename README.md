@@ -99,6 +99,13 @@ list resolution for status updates, series metadata mutation, series cover
 mutation, rating updates, progress push behavior, and wrapped mutation
 error semantics.
 
+Wave 5 baseline adds search and cover orchestration suite:
+
+1. `tests/wave5-search-cover-baseline.test.cjs`
+
+This suite covers deterministic title matching, raw search transport shaping,
+cover lookup by tracker identity, and cached cover download behavior.
+
 ## Port Plan
 
 Structured function-by-function port plan for MangaUpdates wrapper migration:

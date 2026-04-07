@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const MangaUpdatesAPISettings = require(path.join(__dirname, 'api-settings-mangaupdates.cjs'));
 
@@ -1683,11 +1684,111 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
-   * @param {string} query
+   * @param {Record<string, unknown> | string} searchable
+   * @param {{ useCache?: boolean, searchTitles?: string[] }} [options]
+   * @returns {Promise<Array<Record<string, unknown>>>}
+   */
+  async searchTrackers(searchable, options = {}) {
+    const useCache = !(options && typeof options === 'object' && options.useCache === false);
+    const titles = this._buildTitleList(searchable, options);
+    if (titles.length === 0) {
+      return [];
+    }
+
+    const matchResult = await this._findExactMatch(titles, useCache);
+    if (matchResult.match) {
+      const record = matchResult.match && typeof matchResult.match === 'object' && matchResult.match.record
+        && typeof matchResult.match.record === 'object'
+        ? matchResult.match.record
+        : null;
+      const seriesId = record && (typeof record.series_id === 'number' || typeof record.series_id === 'string')
+        ? Number(record.series_id)
+        : NaN;
+
+      if (Number.isFinite(seriesId) && seriesId > 0) {
+        const detail = await this.getSerieDetail(seriesId, { useCache });
+        if (detail && typeof detail === 'object') {
+          return [this._normalizeSeriesData(detail)];
+        }
+      }
+
+      return [this._mapSearchResult(matchResult.match, 'exact')];
+    }
+
+    for (const title of titles) {
+      const fallbackResults = await this.serieSearch(
+        {
+          search: title,
+          stype: 'title',
+          type: ['manga', 'manhua', 'manhwa'],
+          perpage: 5,
+        },
+        { useCache },
+      );
+
+      if (Array.isArray(fallbackResults) && fallbackResults.length > 0) {
+        return fallbackResults.slice(0, 5).map((result) => this._mapSearchResult(result, 'manual'));
+      }
+    }
+
+    return [];
+  }
+
+  /**
+   * @param {Record<string, unknown> | string} searchable
+   * @param {{ useCache?: boolean, searchTitles?: string[] }} [options]
    * @returns {Promise<MangaUpdatesRawSearchResponse>}
    */
-  async searchTrackersRaw(query) {
-    const normalizedQuery = typeof query === 'string' ? query.trim() : '';
+  async searchTrackersRaw(searchable, options = {}) {
+    const useCache = !(options && typeof options === 'object' && options.useCache === false);
+    const titles = this._buildTitleList(searchable, options);
+    const normalizedQuery = titles.length > 0 ? titles[0] : '';
+
+    try {
+      for (const title of titles) {
+        const searchResults = await this.serieSearch(
+          {
+            search: title,
+            stype: 'title',
+            type: ['manga', 'manhua', 'manhwa'],
+            perpage: 25,
+          },
+          { useCache },
+        );
+
+        if (!Array.isArray(searchResults) || searchResults.length === 0) {
+          continue;
+        }
+
+        const items = searchResults.slice(0, 5).map((result) => {
+          const row = result && typeof result === 'object' && result.record && typeof result.record === 'object'
+            ? result.record
+            : null;
+          const itemId = row && (typeof row.series_id === 'number' || typeof row.series_id === 'string')
+            ? String(row.series_id)
+            : `mu-${toSlug(typeof title === 'string' ? title : '')}`;
+          const itemTitle = row && typeof row.title === 'string' && row.title.trim()
+            ? row.title.trim()
+            : result && typeof result === 'object' && typeof result.hit_title === 'string' && result.hit_title.trim()
+              ? result.hit_title.trim()
+              : title;
+
+          return {
+            id: itemId,
+            title: itemTitle,
+          };
+        });
+
+        return {
+          trackerId: 'mangaupdates',
+          operation: 'searchTrackersRaw',
+          payload: { data: items },
+        };
+      }
+    } catch (error) {
+      // Fall through to legacy placeholder to preserve baseline contract behavior.
+    }
+
     const items = normalizedQuery
       ? [{ id: `mu-${normalizedQuery.toLowerCase()}`, title: normalizedQuery }]
       : [];
@@ -1697,6 +1798,450 @@ class MangaUpdatesAPIWrapper {
       operation: 'searchTrackersRaw',
       payload: { data: items },
     };
+  }
+
+  /**
+   * @param {Record<string, unknown>} mangaCoreEntry
+   * @param {{ useCache?: boolean, trackerId?: string|number, onProgress?: Function }} [options]
+   * @returns {Promise<Array<Record<string, unknown>>>}
+   */
+  async searchCovers(mangaCoreEntry, options = {}) {
+    const useCache = !(options && typeof options === 'object' && options.useCache === false);
+    const trackerIdFromOptions = options && typeof options === 'object' ? options.trackerId : null;
+    const onProgress = options && typeof options === 'object' && typeof options.onProgress === 'function'
+      ? options.onProgress
+      : null;
+
+    const emit = (status, detail, extra = {}) => {
+      if (!onProgress) {
+        return;
+      }
+
+      onProgress({
+        source: SERVICE_NAME,
+        status,
+        detail,
+        timestamp: new Date().toISOString(),
+        ...extra,
+      });
+    };
+
+    const trackerId = trackerIdFromOptions || this._getTrackerId(mangaCoreEntry);
+    if (trackerId) {
+      emit('running', `Fetching cover by tracker id ${trackerId}`);
+      const detail = await this.getSerieDetail(Number(trackerId), { useCache });
+      const coverUrl = this._extractCoverUrl(detail);
+      if (detail && coverUrl) {
+        const normalized = [this._normalizeCoverSearchResult(detail, mangaCoreEntry, 'exact')];
+        emit('complete', 'Cover lookup completed from tracker id', { results: normalized });
+        return normalized;
+      }
+    }
+
+    const titles = this._buildTitleList(mangaCoreEntry, options);
+    if (titles.length === 0) {
+      emit('error', 'No searchable titles available for cover lookup');
+      return [];
+    }
+
+    emit('running', 'Searching tracker for cover candidates');
+    const matchResult = await this._findExactMatch(titles, useCache);
+    if (!matchResult.match) {
+      emit('error', 'No exact cover candidate found');
+      return [];
+    }
+
+    const row = matchResult.match && typeof matchResult.match === 'object' && matchResult.match.record
+      && typeof matchResult.match.record === 'object'
+      ? matchResult.match.record
+      : null;
+    const seriesId = row && (typeof row.series_id === 'number' || typeof row.series_id === 'string')
+      ? Number(row.series_id)
+      : NaN;
+
+    if (Number.isFinite(seriesId) && seriesId > 0) {
+      const detail = await this.getSerieDetail(seriesId, { useCache });
+      if (detail && this._extractCoverUrl(detail)) {
+        const normalized = [this._normalizeCoverSearchResult(detail, mangaCoreEntry, 'exact')];
+        emit('complete', 'Cover lookup completed from exact match', { results: normalized });
+        return normalized;
+      }
+    }
+
+    const coverUrl = this._extractCoverUrl(row);
+    if (!coverUrl) {
+      emit('error', 'Exact match found but no cover url available');
+      return [];
+    }
+
+    const normalized = [this._normalizeCoverSearchResult(row, mangaCoreEntry, 'manual')];
+    emit('complete', 'Cover lookup completed from search fallback', { results: normalized });
+    return normalized;
+  }
+
+  /**
+   * @param {Record<string, unknown>} metadata
+   * @param {string} savePath
+   * @returns {Promise<boolean>}
+   */
+  async downloadCover(metadata, savePath) {
+    const url = metadata && typeof metadata === 'object' && typeof metadata.url === 'string'
+      ? metadata.url
+      : '';
+    const mangaId = metadata && typeof metadata === 'object' && metadata.mangaId !== undefined
+      ? String(metadata.mangaId)
+      : 'unknown';
+    const fileName = metadata && typeof metadata === 'object' && typeof metadata.fileName === 'string'
+      ? metadata.fileName
+      : 'cover.jpg';
+
+    if (!url || typeof savePath !== 'string' || !savePath.trim()) {
+      return false;
+    }
+
+    const cacheKey = `mangaupdates_downloadCover_${mangaId}_${fileName}`;
+
+    try {
+      /** @type {Buffer | null} */
+      let imageBuffer = null;
+
+      if (this.cacheAdapter && typeof this.cacheAdapter.getValue === 'function') {
+        const cached = await this.cacheAdapter.getValue(cacheKey);
+        if (typeof cached === 'string' && cached.length > 0) {
+          imageBuffer = Buffer.from(cached, 'base64');
+        }
+      }
+
+      if (!imageBuffer) {
+        if (!this.httpClient || typeof this.httpClient.get !== 'function') {
+          return false;
+        }
+
+        const response = await this.httpClient.get(url, { responseType: 'arraybuffer' });
+        const responseData = response && typeof response === 'object' ? response.data : null;
+        if (Buffer.isBuffer(responseData)) {
+          imageBuffer = responseData;
+        } else if (responseData instanceof ArrayBuffer) {
+          imageBuffer = Buffer.from(responseData);
+        } else if (ArrayBuffer.isView(responseData)) {
+          imageBuffer = Buffer.from(responseData.buffer);
+        } else if (typeof responseData === 'string') {
+          imageBuffer = Buffer.from(responseData, 'binary');
+        }
+
+        if (!imageBuffer) {
+          return false;
+        }
+
+        if (this.cacheAdapter && typeof this.cacheAdapter.setValue === 'function') {
+          await this.cacheAdapter.setValue(cacheKey, imageBuffer.toString('base64'), 24 * 60 * 60);
+        }
+      }
+
+      await fs.promises.mkdir(path.dirname(savePath), { recursive: true });
+      await fs.promises.writeFile(savePath, imageBuffer);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * @param {string[]} titles
+   * @param {boolean} [useCache]
+   * @returns {Promise<{ match: Record<string, unknown> | null, attempts: number, cacheHit: boolean }>}
+   */
+  async _findExactMatch(titles, useCache = true) {
+    if (!Array.isArray(titles) || titles.length === 0) {
+      return {
+        match: null,
+        attempts: 0,
+        cacheHit: false,
+      };
+    }
+
+    if (!useCache) {
+      await this.refresh(true);
+    }
+
+    let attempts = 0;
+    for (const title of titles) {
+      attempts += 1;
+      const searchResults = await this.serieSearch(
+        {
+          search: title,
+          stype: 'title',
+          type: ['manga', 'manhua', 'manhwa'],
+          perpage: 25,
+        },
+        { useCache },
+      );
+
+      if (!Array.isArray(searchResults) || searchResults.length === 0) {
+        continue;
+      }
+
+      const exactMatch = searchResults.find((result) => {
+        /** @type {string[]} */
+        const candidateTitles = [];
+        if (result && typeof result === 'object' && typeof result.hit_title === 'string') {
+          candidateTitles.push(result.hit_title);
+        }
+
+        const row = result && typeof result === 'object' && result.record && typeof result.record === 'object'
+          ? result.record
+          : null;
+        if (row && typeof row.title === 'string') {
+          candidateTitles.push(row.title);
+        }
+
+        const associated = row && Array.isArray(row.associated) ? row.associated : [];
+        for (const entry of associated) {
+          if (entry && typeof entry === 'object' && typeof entry.title === 'string') {
+            candidateTitles.push(entry.title);
+          }
+        }
+
+        return this._hasExactTitleMatch(titles, candidateTitles);
+      });
+
+      if (exactMatch) {
+        if (!useCache) {
+          await this.refresh(false);
+        }
+
+        return {
+          match: exactMatch,
+          attempts,
+          cacheHit: false,
+        };
+      }
+    }
+
+    if (!useCache) {
+      await this.refresh(false);
+    }
+
+    return {
+      match: null,
+      attempts,
+      cacheHit: false,
+    };
+  }
+
+  /**
+   * @param {Record<string, unknown> | string | null | undefined} searchable
+   * @param {{ searchTitles?: string[] }} [options]
+   * @returns {string[]}
+   */
+  _buildTitleList(searchable, options = {}) {
+    /** @type {string[]} */
+    const titles = [];
+    const searchTitles = options && typeof options === 'object' && Array.isArray(options.searchTitles)
+      ? options.searchTitles
+      : [];
+    titles.push(...searchTitles);
+
+    if (typeof searchable === 'string') {
+      titles.push(searchable);
+    } else if (searchable && typeof searchable === 'object') {
+      if (typeof searchable.title === 'string') {
+        titles.push(searchable.title);
+      }
+      if (typeof searchable.name === 'string') {
+        titles.push(searchable.name);
+      }
+      if (typeof searchable.alias === 'string') {
+        titles.push(searchable.alias);
+      }
+
+      const aliases = Array.isArray(searchable.aliases) ? searchable.aliases : [];
+      for (const alias of aliases) {
+        if (typeof alias === 'string') {
+          titles.push(alias);
+        }
+      }
+
+      const alternatives = Array.isArray(searchable.alternativeTitles) ? searchable.alternativeTitles : [];
+      for (const alternative of alternatives) {
+        if (typeof alternative === 'string') {
+          titles.push(alternative);
+        }
+      }
+    }
+
+    /** @type {string[]} */
+    const deduped = [];
+    const seen = new Set();
+    for (const title of titles) {
+      if (typeof title !== 'string') {
+        continue;
+      }
+
+      const normalized = title.trim();
+      if (!normalized) {
+        continue;
+      }
+
+      const dedupeKey = normalized.toLowerCase();
+      if (seen.has(dedupeKey)) {
+        continue;
+      }
+
+      seen.add(dedupeKey);
+      deduped.push(normalized);
+    }
+
+    return deduped;
+  }
+
+  /**
+   * @param {string[]} expectedTitles
+   * @param {string[]} candidateTitles
+   * @returns {boolean}
+   */
+  _hasExactTitleMatch(expectedTitles, candidateTitles) {
+    const expected = new Set(
+      expectedTitles
+        .filter((title) => typeof title === 'string')
+        .map((title) => toSlug(title))
+        .filter(Boolean),
+    );
+
+    for (const candidateTitle of candidateTitles) {
+      if (typeof candidateTitle !== 'string') {
+        continue;
+      }
+
+      const candidateSlug = toSlug(candidateTitle);
+      if (candidateSlug && expected.has(candidateSlug)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * @param {Record<string, unknown>} searchResult
+   * @param {'exact' | 'manual'} matchType
+   * @returns {Record<string, unknown>}
+   */
+  _mapSearchResult(searchResult, matchType) {
+    const row = searchResult && typeof searchResult === 'object' && searchResult.record && typeof searchResult.record === 'object'
+      ? searchResult.record
+      : {};
+    const associated = Array.isArray(row.associated) ? row.associated : [];
+
+    return {
+      source: SERVICE_NAME,
+      trackerId: row && (typeof row.series_id === 'number' || typeof row.series_id === 'string')
+        ? row.series_id
+        : null,
+      title: typeof row.title === 'string' && row.title.trim()
+        ? row.title
+        : searchResult && typeof searchResult === 'object' && typeof searchResult.hit_title === 'string'
+          ? searchResult.hit_title
+          : '',
+      alternativeTitles: associated
+        .map((entry) => (entry && typeof entry === 'object' && typeof entry.title === 'string' ? entry.title : null))
+        .filter((entry) => entry !== null),
+      coverUrl: this._extractCoverUrl(row),
+      metadata: {
+        url: typeof row.url === 'string' ? row.url : null,
+        matchedTitle: searchResult && typeof searchResult === 'object' && typeof searchResult.hit_title === 'string'
+          ? searchResult.hit_title
+          : null,
+      },
+      confidence: matchType === 'exact' ? 100 : 0,
+      matchType,
+    };
+  }
+
+  /**
+   * @param {Record<string, unknown> | null | undefined} payload
+   * @returns {string | null}
+   */
+  _extractCoverUrl(payload) {
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+
+    const image = payload.image && typeof payload.image === 'object' ? payload.image : null;
+    const url = image && image.url && typeof image.url === 'object' ? image.url : null;
+
+    if (url && typeof url.original === 'string' && url.original.trim()) {
+      return url.original;
+    }
+
+    if (url && typeof url.thumb === 'string' && url.thumb.trim()) {
+      return url.thumb;
+    }
+
+    if (typeof payload.coverUrl === 'string' && payload.coverUrl.trim()) {
+      return payload.coverUrl;
+    }
+
+    return null;
+  }
+
+  /**
+   * @param {Record<string, unknown>} detail
+   * @param {Record<string, unknown>} mangaCoreEntry
+   * @param {'exact' | 'manual'} matchType
+   * @returns {Record<string, unknown>}
+   */
+  _normalizeCoverSearchResult(detail, mangaCoreEntry, matchType) {
+    const coverUrl = this._extractCoverUrl(detail);
+    const seriesId = detail && (typeof detail.series_id === 'number' || typeof detail.series_id === 'string')
+      ? String(detail.series_id)
+      : detail && (typeof detail.id === 'number' || typeof detail.id === 'string')
+        ? String(detail.id)
+        : 'unknown';
+    const title = detail && typeof detail.title === 'string' && detail.title.trim()
+      ? detail.title.trim()
+      : mangaCoreEntry && typeof mangaCoreEntry.title === 'string' && mangaCoreEntry.title.trim()
+        ? mangaCoreEntry.title.trim()
+        : `series-${seriesId}`;
+
+    return {
+      source: SERVICE_NAME,
+      trackerId: seriesId,
+      mangaId: seriesId,
+      mangaCoreKey: mangaCoreEntry && typeof mangaCoreEntry === 'object' && typeof mangaCoreEntry.key === 'string'
+        ? mangaCoreEntry.key
+        : null,
+      title,
+      url: coverUrl,
+      fileName: `${toSlug(title) || `series-${seriesId}`}.jpg`,
+      extension: 'jpg',
+      mimeType: 'image/jpeg',
+      canonicalUrl: detail && typeof detail.url === 'string' ? detail.url : null,
+      fetchedAt: new Date().toISOString(),
+      confidence: matchType === 'exact' ? 100 : 0,
+      matchType,
+    };
+  }
+
+  /**
+   * @param {Record<string, unknown> | null | undefined} mangaCoreEntry
+   * @returns {number | null}
+   */
+  _getTrackerId(mangaCoreEntry) {
+    if (!mangaCoreEntry || typeof mangaCoreEntry !== 'object') {
+      return null;
+    }
+
+    const trackerMappings = mangaCoreEntry.trackerMappings && typeof mangaCoreEntry.trackerMappings === 'object'
+      ? mangaCoreEntry.trackerMappings
+      : null;
+    const mapping = trackerMappings && trackerMappings.mangaupdates && typeof trackerMappings.mangaupdates === 'object'
+      ? trackerMappings.mangaupdates
+      : null;
+
+    const candidate = mapping && (mapping.id !== undefined ? mapping.id : mapping.trackerId);
+    const numeric = Number(candidate);
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
   }
 
   /**

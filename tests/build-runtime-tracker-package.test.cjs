@@ -48,8 +48,11 @@ test('buildEffectiveSettingsDocument merges definition and values into runtime p
   assert.equal(effective.metadata.settingsContractVersion, TRACKER_SETTINGS_CONTRACT_VERSION);
   assert.equal(typeof effective.schema['api.baseUrl'], 'object');
   assert.equal(typeof effective.schema['api.endpoints.series.template'], 'object');
+  assert.equal(typeof effective.schema['api.endpoints.seriesImage.template'], 'object');
   assert.equal(effective.settings['api.baseUrl'], 'https://api.mangaupdates.com/v1');
   assert.equal(effective.settings['api.endpoints.series.template'], '${baseUrl}/series/${series_id}');
+  assert.equal(effective.settings['api.endpoints.seriesImage.template'], '${baseUrl}/series/${series_id}/image');
+  assert.equal(effective.settings['rateLimit.perEndpoint.seriesImage'], 1000);
   assert.equal(effective.settings['statusMapping.READING'], 0);
 });
 
@@ -98,7 +101,9 @@ test('buildRuntimeTrackerPackage creates zip with tracker-package.json and runti
     assert.equal(effectiveSettings.metadata.componentName, 'MangaUpdatesAPI');
     assert.equal(effectiveSettings.settings['api.endpoints.listUpdateSeries.template'], '${baseUrl}/lists/series/update');
     assert.equal(effectiveSettings.settings['api.endpoints.seriesSearch.template'], '${baseUrl}/series/search');
+    assert.equal(effectiveSettings.settings['api.endpoints.seriesImage.template'], '${baseUrl}/series/${series_id}/image');
     assert.equal(effectiveSettings.settings['rateLimit.perEndpoint.seriesSearch'], 1500);
+    assert.equal(effectiveSettings.settings['rateLimit.perEndpoint.seriesImage'], 1000);
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
