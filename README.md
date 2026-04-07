@@ -85,6 +85,17 @@ For non-interactive shells, set `MU_TEST_USERNAME` and `MU_TEST_PASSWORD` before
 By default it prints verbose auth progress and a masked token preview.
 Set `MU_TEST_SHOW_FULL_TOKEN=1` if you explicitly want the full token printed.
 
+Manual local search integration test (interactive credentials + query prompt):
+
+```bash
+npm run test:search:interactive
+```
+
+This test is local-only and intentionally excluded from default `npm test` and CI runs.
+The runner prompts for temporary real MangaUpdates credentials and a live search query.
+For non-interactive shells, set `MU_TEST_USERNAME`, `MU_TEST_PASSWORD`, and `MU_TEST_SEARCH_QUERY` before running the command.
+Set `MU_TEST_SHOW_FULL_SEARCH_PAYLOAD=1` if you want the full search payload logged.
+
 Final test suites:
 
 1. `tests/unit/build-runtime-tracker-package.test.cjs`
@@ -97,6 +108,7 @@ Final test suites:
 8. `tests/unit/runtime-wrapper-write.test.cjs`
 9. `tests/unit/runtime-wrapper-search-cover.test.cjs`
 10. `tests/integration/runtime-wrapper-auth-integration.manual.cjs` (manual opt-in)
+11. `tests/integration/runtime-wrapper-search-integration.manual.cjs` (manual opt-in)
 
 These suites cover build/manifest compatibility, mapper normalization,
 settings contracts and baseline matrix checks, wrapper lifecycle,
