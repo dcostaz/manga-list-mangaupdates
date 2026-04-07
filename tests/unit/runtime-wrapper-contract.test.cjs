@@ -7,6 +7,7 @@ const path = require('path');
 const MangaUpdatesAPIWrapper = require(path.join(
   __dirname,
   '..',
+  '..',
   'src',
   'runtime',
   'apiwrappers',
@@ -15,6 +16,7 @@ const MangaUpdatesAPIWrapper = require(path.join(
 ));
 const MangaUpdatesAPISettings = require(path.join(
   __dirname,
+  '..',
   '..',
   'src',
   'runtime',
