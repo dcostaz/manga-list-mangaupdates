@@ -57,6 +57,9 @@ Type definitions governance:
 npm test
 ```
 
+GitHub Actions runs the same test command on every push and pull request via:
+`.github/workflows/tests.yml`.
+
 Final test suites:
 
 1. `tests/build-runtime-tracker-package.test.cjs`
