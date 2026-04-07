@@ -90,6 +90,13 @@ list status retrieval, list-id to status mapping, progress normalization,
 series URL extraction, detailed series lookup, series search, cover retrieval,
 and normalization contract behavior.
 
+Wave 4 baseline adds write-path mutation suite:
+
+1. `tests/wave4-write-baseline.test.cjs`
+
+This suite covers authentication fallback, update payload transformation,
+list resolution for status updates, and wrapped mutation error semantics.
+
 ## Port Plan
 
 Structured function-by-function port plan for MangaUpdates wrapper migration:

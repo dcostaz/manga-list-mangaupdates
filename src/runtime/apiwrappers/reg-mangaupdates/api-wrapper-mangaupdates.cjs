@@ -1064,6 +1064,225 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * @param {Record<string, unknown> | Array<Record<string, unknown>>} payload
+   * @returns {Promise<{ status: number, data: unknown }>}
+   */
+  async updateListSeries(payload) {
+    let bearerToken = '';
+    try {
+      bearerToken = await this.getToken();
+    } catch (error) {
+      bearerToken = '';
+    }
+
+    if (!bearerToken) {
+      return { status: 401, data: { reason: 'Not authenticated' } };
+    }
+
+    const endpoint = this._resolveEndpoint('api.endpoints.listUpdateSeries.template');
+    if (!endpoint) {
+      throw new Error('(updateListSeries) Missing listUpdateSeries config');
+    }
+
+    if (!this.httpClient || typeof this.httpClient.post !== 'function') {
+      throw new Error('(updateListSeries) HTTP client post method is not configured');
+    }
+
+    const payloadArray = Array.isArray(payload) ? payload : [payload];
+    const transformedPayload = payloadArray.map((item) => {
+      const row = item && typeof item === 'object' ? item : {};
+      /** @type {Record<string, unknown>} */
+      const transformed = {
+        series: row.series,
+        list_id: row.list_id,
+      };
+
+      const status = row.status && typeof row.status === 'object' ? row.status : null;
+      if (status) {
+        /** @type {Record<string, number>} */
+        const statusObject = {};
+
+        if (typeof status.chapter === 'number' && status.chapter > 0) {
+          statusObject.chapter = Math.floor(status.chapter);
+        }
+        if (typeof status.volume === 'number' && status.volume > 0) {
+          statusObject.volume = Math.floor(status.volume);
+        }
+
+        if (Object.keys(statusObject).length > 0) {
+          transformed.status = statusObject;
+        }
+      }
+
+      return transformed;
+    });
+
+    try {
+      const response = await this.httpClient.post(
+        endpoint,
+        transformedPayload,
+        {
+          headers: {
+            Authorization: `Bearer ${bearerToken}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      const responseData = response && typeof response === 'object' ? response.data : null;
+      if (responseData && typeof responseData === 'object' && responseData.status === 'EXCEPTION') {
+        return { status: 400, data: responseData };
+      }
+
+      return {
+        status: response && typeof response === 'object' && typeof response.status === 'number' ? response.status : 200,
+        data: responseData,
+      };
+    } catch (error) {
+      if (error && typeof error === 'object' && error.response && typeof error.response === 'object') {
+        const status = typeof error.response.status === 'number' ? error.response.status : 500;
+        const data = 'data' in error.response ? error.response.data : null;
+        return { status, data };
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * @param {Record<string, unknown> | Array<Record<string, unknown>>} payload
+   * @returns {Promise<{ status: number, data: unknown }>}
+   */
+  async addListSeries(payload) {
+    let bearerToken = '';
+    try {
+      bearerToken = await this.getToken();
+    } catch (error) {
+      bearerToken = '';
+    }
+
+    if (!bearerToken) {
+      return { status: 401, data: { reason: 'Not authenticated' } };
+    }
+
+    const endpoint = this._resolveEndpoint('api.endpoints.listAddSeries.template');
+    if (!endpoint) {
+      throw new Error('(addListSeries) Missing listAddSeries config');
+    }
+
+    if (!this.httpClient || typeof this.httpClient.post !== 'function') {
+      throw new Error('(addListSeries) HTTP client post method is not configured');
+    }
+
+    const payloadArray = Array.isArray(payload) ? payload : [payload];
+
+    try {
+      const response = await this.httpClient.post(
+        endpoint,
+        payloadArray,
+        {
+          headers: {
+            Authorization: `Bearer ${bearerToken}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      const responseData = response && typeof response === 'object' ? response.data : null;
+      if (responseData && typeof responseData === 'object' && responseData.status === 'EXCEPTION') {
+        return { status: 400, data: responseData };
+      }
+
+      return {
+        status: response && typeof response === 'object' && typeof response.status === 'number' ? response.status : 200,
+        data: responseData,
+      };
+    } catch (error) {
+      if (error && typeof error === 'object' && error.response && typeof error.response === 'object') {
+        const status = typeof error.response.status === 'number' ? error.response.status : 500;
+        const data = 'data' in error.response ? error.response.data : null;
+        return { status, data };
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * @param {Record<string, unknown> | Array<Record<string, unknown>>} updates
+   * @returns {Promise<{ status: number, data: unknown }>}
+   */
+  async updateStatus(updates) {
+    try {
+      const updatesArray = Array.isArray(updates) ? updates : [updates];
+      if (updatesArray.length === 0) {
+        throw new Error('No updates provided');
+      }
+
+      const userLists = await this.getUserLists();
+      if (!Array.isArray(userLists) || userLists.length === 0) {
+        throw new Error('Unable to fetch user lists. Cannot update status.');
+      }
+
+      const listSeriesPayload = updatesArray.map((update) => {
+        const row = update && typeof update === 'object' ? update : {};
+        const trackerId = row.trackerId;
+        const statusCode = row.statusCode;
+        const progressData = row.progressData && typeof row.progressData === 'object'
+          ? row.progressData
+          : {};
+
+        const targetList = userLists.find((list) => {
+          if (!list || typeof list !== 'object') {
+            return false;
+          }
+
+          return list.list_id === statusCode;
+        });
+
+        if (!targetList) {
+          const availableListIds = userLists
+            .filter((list) => list && typeof list === 'object')
+            .map((list) => `${list.list_id}:${typeof list.title === 'string' ? list.title : ''}`)
+            .join(', ');
+          throw new Error(`Unable to find list with list_id ${statusCode}. Available: ${availableListIds}`);
+        }
+
+        /** @type {Record<string, number>} */
+        const statusObject = {};
+        if (typeof progressData.chapter === 'number' && progressData.chapter > 0) {
+          statusObject.chapter = progressData.chapter;
+        }
+        if (typeof progressData.volume === 'number' && progressData.volume > 0) {
+          statusObject.volume = progressData.volume;
+        }
+
+        return {
+          series: { id: Number(trackerId) },
+          list_id: targetList.list_id,
+          status: statusObject,
+        };
+      });
+
+      const result = await this.updateListSeries(listSeriesPayload);
+      if (result.status >= 400) {
+        const errorData = result && typeof result === 'object' && result.data && typeof result.data === 'object'
+          ? result.data
+          : null;
+        throw new Error(`Failed to update status: ${errorData && typeof errorData.reason === 'string' ? errorData.reason : 'Unknown error'}`);
+      }
+
+      return {
+        status: result.status || 200,
+        data: result.data,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`(MangaUpdates.updateStatus) ${message}`);
+    }
+  }
+
+  /**
    * @param {string} query
    * @returns {Promise<MangaUpdatesRawSearchResponse>}
    */

@@ -206,6 +206,12 @@ Exit gate:
 Objective:
 - Port all mutation paths used by progress sync flows.
 
+Status:
+- In progress (started 2026-04-06).
+- Added baseline mutation behavior for:
+	`updateListSeries`, `addListSeries`, and `updateStatus`.
+- Added Wave 4 baseline tests for payload shaping and status-list resolution.
+
 Functions:
 1. updateSeries
 2. updateSeriesCover
