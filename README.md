@@ -4,6 +4,10 @@ Runtime tracker package source for MangaUpdates.
 
 This repository builds a runtime-installable zip artifact compatible with manga-list `TrackerPackageLoader`.
 
+Latest runtime zip download (GitHub release asset):
+
+https://github.com/dcostaz/manga-list-mangaupdates/releases/download/runtime-latest/manga-list-mangaupdates-runtime.zip
+
 ## Build
 
 ```bash
@@ -59,6 +63,9 @@ npm test
 
 GitHub Actions runs the same test command on every push and pull request via:
 `.github/workflows/tests.yml`.
+
+GitHub Actions also builds and publishes the runtime zip on pushes to main via:
+`.github/workflows/release-runtime-zip.yml`.
 
 Final test suites:
 
