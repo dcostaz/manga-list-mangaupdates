@@ -57,65 +57,21 @@ Type definitions governance:
 npm test
 ```
 
-Wave 0 adds dedicated contract harness suites:
+Final test suites:
 
-1. `tests/wave0-wrapper-contract.test.cjs`
-2. `tests/wave0-mapper-contract.test.cjs`
-3. `tests/wave0-settings-contract.test.cjs`
-4. `tests/wave0-settings-baseline-matrix.test.cjs`
+1. `tests/build-runtime-tracker-package.test.cjs`
+2. `tests/runtime-mapper.test.cjs`
+3. `tests/runtime-settings.test.cjs`
+4. `tests/runtime-wrapper-contract.test.cjs`
+5. `tests/runtime-wrapper-init.test.cjs`
+6. `tests/runtime-wrapper-token.test.cjs`
+7. `tests/runtime-wrapper-read.test.cjs`
+8. `tests/runtime-wrapper-write.test.cjs`
+9. `tests/runtime-wrapper-search-cover.test.cjs`
 
-Wave 0 mapper coverage includes compatibility checks for enriched raw payload
-shapes (numeric IDs, nested series metadata, and search result fallback fields).
+These suites cover build/manifest compatibility, mapper normalization,
+settings contracts and baseline matrix checks, wrapper lifecycle,
+read and write orchestration flows, and search/cover runtime behavior.
 
 Note: The baseline matrix suite validates MangaUpdates locally and validates MangaDex when
 `../manga-list-mangadex` exists in the same parent directory layout.
-
-Wave 1 adds runtime init and infrastructure behavior suite:
-
-1. `tests/wave1-runtime-init.test.cjs`
-
-This suite covers init-path settings resolution, interceptor error normalization,
-credential validation behavior, and static service identity.
-
-Wave 2 adds token lifecycle suite:
-
-1. `tests/wave2-token-lifecycle.test.cjs`
-
-This suite covers refresh toggle persistence, token cache key + TTL semantics,
-token extraction/caching, and cache-first token fetch behavior.
-
-Wave 3 baseline adds read-path infrastructure suite:
-
-1. `tests/wave3-read-baseline.test.cjs`
-
-This suite covers credential-backed token retrieval, user-list read/caching,
-list status retrieval, list-id to status mapping, progress normalization,
-series URL extraction, detailed series lookup, series search, cover retrieval,
-and normalization contract behavior.
-
-Wave 4 baseline adds write-path mutation suite:
-
-1. `tests/wave4-write-baseline.test.cjs`
-
-This suite covers authentication fallback, update payload transformation,
-list resolution for status updates, series metadata mutation, series cover
-mutation, subscription upsert behavior, rating updates, progress push
-behavior, and wrapped mutation error semantics.
-
-Wave 5 baseline adds search and cover orchestration suite:
-
-1. `tests/wave5-search-cover-baseline.test.cjs`
-
-This suite covers deterministic title matching, raw search transport shaping,
-exact-first fuzzy ranking, cover lookup by tracker identity, and cached
-cover download behavior.
-
-## Port Plan
-
-Structured function-by-function port plan for MangaUpdates wrapper migration:
-
-1. d:/manga-list-mangaupdates/docs/mangaupdates-wrapper-port-plan.md
-2. d:/manga-list-mangaupdates/docs/runtime-structure-consistency-report.md
-
-The consistency report includes host runtime loader verification evidence
-(install/list/reload/remove) for the built MangaUpdates package artifact.

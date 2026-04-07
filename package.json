@@ -2,7 +2,7 @@
   "name": "manga-list-mangaupdates",
   "version": "1.0.0",
   "description": "Runtime tracker package source and builder for MangaUpdates",
-  "main": "src/index.cjs",
+  "main": "src/runtime/apiwrappers/reg-mangaupdates/tracker-module.cjs",
   "scripts": {
     "build": "node scripts/build-runtime-tracker-package.cjs",
     "build:runtime": "node scripts/build-runtime-tracker-package.cjs",

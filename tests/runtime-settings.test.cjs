@@ -4,6 +4,26 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
+const fsPromises = require('fs').promises;
+const os = require('os');
+
+const MangaUpdatesAPISettings = require(path.join(
+  __dirname,
+  '..',
+  'src',
+  'runtime',
+  'apiwrappers',
+  'reg-mangaupdates',
+  'api-settings-mangaupdates.cjs',
+));
+const {
+  buildEffectiveSettingsDocument,
+} = require(path.join(
+  __dirname,
+  '..',
+  'scripts',
+  'build-runtime-tracker-package.cjs',
+));
 
 const mangaupdatesValuesPath = path.join(
   __dirname,
@@ -25,6 +45,13 @@ const mangadexValuesPath = path.join(
   'reg-mangadex',
   'mangadex-api-settings.values.json',
 );
+
+/**
+ * @returns {Promise<string>}
+ */
+async function createTempDir() {
+  return await fsPromises.mkdtemp(path.join(os.tmpdir(), 'manga-list-mangaupdates-settings-test-'));
+}
 
 /**
  * @param {string} filePath
@@ -74,13 +101,11 @@ function assertBaselineMatrix(settingsDocument, trackerName) {
 
   const settings = /** @type {Record<string, unknown>} */ (settingsDocument.settings);
 
-  // Communication settings baseline
   assert.equal(typeof settings['api.baseUrl'], 'string', `${trackerName} api.baseUrl must be a string`);
   assert.equal(typeof settings['connection.timeout.connect'], 'number', `${trackerName} connection timeout.connect must be a number`);
   assert.equal(typeof settings['connection.timeout.request'], 'number', `${trackerName} connection timeout.request must be a number`);
   assert.ok(getEndpointTemplateKeys(settingsDocument).length > 0, `${trackerName} must define endpoint template keys`);
 
-  // Caching settings baseline
   assert.equal(typeof settings['cache.enabled'], 'boolean', `${trackerName} cache.enabled must be a boolean`);
   assert.equal(typeof settings['cache.provider'], 'string', `${trackerName} cache.provider must be a string`);
   assert.equal(typeof settings['cache.ttl.default'], 'number', `${trackerName} cache.ttl.default must be a number`);
@@ -89,7 +114,6 @@ function assertBaselineMatrix(settingsDocument, trackerName) {
     `${trackerName} must define token/session cache TTL settings`,
   );
 
-  // Error handling and resilience baseline
   assert.equal(typeof settings['retry.enabled'], 'boolean', `${trackerName} retry.enabled must be a boolean`);
   assert.equal(typeof settings['retry.maxAttempts'], 'number', `${trackerName} retry.maxAttempts must be a number`);
   assert.equal(typeof settings['retry.backoff.type'], 'string', `${trackerName} retry.backoff.type must be a string`);
@@ -106,13 +130,66 @@ function assertBaselineMatrix(settingsDocument, trackerName) {
   assert.equal(typeof settings['resilience.healthCheck.enabled'], 'boolean', `${trackerName} resilience.healthCheck.enabled must be a boolean`);
 }
 
-test('wave0 settings baseline matrix - MangaUpdates baseline groups are present and typed', () => {
+test('settings contract - init loads merged settings payload and legacy view', async () => {
+  const tempDir = await createTempDir();
+  const settingsPath = path.join(tempDir, 'effective-settings.json');
+
+  try {
+    const effective = buildEffectiveSettingsDocument();
+    await fsPromises.writeFile(settingsPath, JSON.stringify(effective, null, 2), 'utf8');
+
+    const settings = await MangaUpdatesAPISettings.init({ settingsPath });
+    const legacy = settings.toLegacyFormat();
+
+    assert.equal(settings.componentName, 'MangaUpdatesAPI');
+    assert.equal(legacy['api.baseUrl'], 'https://api.mangaupdates.com/v1');
+    assert.equal(legacy['retry.enabled'], true);
+    assert.equal(typeof legacy['cache.ttl.default'], 'number');
+  } finally {
+    await fsPromises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('settings contract - init rejects invalid payload shape', async () => {
+  const tempDir = await createTempDir();
+  const invalidPath = path.join(tempDir, 'invalid-settings.json');
+
+  try {
+    await fsPromises.writeFile(invalidPath, JSON.stringify({ settings: {} }, null, 2), 'utf8');
+
+    await assert.rejects(
+      async () => MangaUpdatesAPISettings.init({ settingsPath: invalidPath }),
+      /metadata\/schema\/settings/,
+    );
+  } finally {
+    await fsPromises.rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('settings contract - merged payload includes required communication, caching, and resilience fields', () => {
+  const effective = buildEffectiveSettingsDocument();
+
+  assert.equal(effective.metadata.componentName, 'MangaUpdatesAPI');
+  assert.equal(typeof effective.schema['api.baseUrl'], 'object');
+  assert.equal(typeof effective.schema['cache.ttl.default'], 'object');
+  assert.equal(typeof effective.schema['retry.maxAttempts'], 'object');
+
+  assert.equal(typeof effective.settings['api.baseUrl'], 'string');
+  assert.equal(typeof effective.settings['connection.timeout.request'], 'number');
+  assert.equal(typeof effective.settings['cache.enabled'], 'boolean');
+  assert.equal(typeof effective.settings['cache.ttl.default'], 'number');
+  assert.equal(typeof effective.settings['retry.enabled'], 'boolean');
+  assert.equal(typeof effective.settings['rateLimit.global.enabled'], 'boolean');
+  assert.equal(typeof effective.settings['resilience.circuitBreaker.enabled'], 'boolean');
+});
+
+test('settings baseline matrix - MangaUpdates baseline groups are present and typed', () => {
   const settingsDocument = loadJson(mangaupdatesValuesPath);
   assertBaselineMatrix(settingsDocument, 'mangaupdates');
 });
 
 test(
-  'wave0 settings baseline matrix - MangaDex baseline groups are present and typed',
+  'settings baseline matrix - MangaDex baseline groups are present and typed',
   {
     skip: !fs.existsSync(mangadexValuesPath) && 'manga-list-mangadex repository not found next to manga-list-mangaupdates',
   },
@@ -123,7 +200,7 @@ test(
 );
 
 test(
-  'wave0 settings baseline matrix - settings contract versions match between MangaUpdates and MangaDex',
+  'settings baseline matrix - settings contract versions match between MangaUpdates and MangaDex',
   {
     skip: !fs.existsSync(mangadexValuesPath) && 'manga-list-mangadex repository not found next to manga-list-mangaupdates',
   },
