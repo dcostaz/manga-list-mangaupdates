@@ -1,0 +1,150 @@
+{
+  "metadata": {
+    "componentName": "MangaUpdatesAPI",
+    "description": "MangaUpdates runtime tracker package settings values (tracker-specific extension)",
+    "version": "1.0.0",
+    "lastModified": "2025-11-15T20:14:45.810Z",
+    "lifecycle": {
+      "bootstrapPhase": "early",
+      "dependencies": [],
+      "requiredBy": []
+    },
+    "categories": [
+      {
+        "id": "display",
+        "label": "Display & UI",
+        "description": "User interface and display options",
+        "order": 50,
+        "icon": "visibility"
+      },
+      {
+        "id": "general",
+        "label": "General",
+        "description": "Basic configuration options",
+        "order": 10,
+        "icon": "settings"
+      },
+      {
+        "id": "network",
+        "label": "Network & API",
+        "description": "Network connections and external API configuration",
+        "order": 40,
+        "icon": "cloud"
+      },
+      {
+        "id": "paths",
+        "label": "Paths & Directories",
+        "description": "File system paths and directory configuration",
+        "order": 20,
+        "icon": "folder"
+      },
+      {
+        "id": "performance",
+        "label": "Performance & Caching",
+        "description": "Performance tuning and caching configuration",
+        "order": 30,
+        "icon": "speed"
+      }
+    ],
+    "settingsContractVersion": "1.0.0"
+  },
+  "settings": {
+    "api.baseUrl": "https://api.mangaupdates.com/v1",
+    "api.endpoints.login.template": "${baseUrl}/account/login",
+    "api.endpoints.login.throttle": 0,
+    "api.endpoints.getUserLists.template": "${baseUrl}/lists",
+    "api.endpoints.getUserLists.throttle": 1000,
+    "api.endpoints.listSearch.template": "${baseUrl}/lists/${list_id}/search",
+    "api.endpoints.listSearch.throttle": 1000,
+    "api.endpoints.listSearch.perPage": 500,
+    "api.endpoints.listGetSeriesItem.template": "${baseUrl}/lists/series/${series_id}?unrenderedFields=true",
+    "api.endpoints.listGetSeriesItem.throttle": 1000,
+    "api.endpoints.listUpdateSeries.template": "${baseUrl}/lists/series/update",
+    "api.endpoints.listUpdateSeries.throttle": 1000,
+    "api.endpoints.listAddSeries.template": "${baseUrl}/lists/series",
+    "api.endpoints.listAddSeries.throttle": 1000,
+    "api.endpoints.series.template": "${baseUrl}/series/${series_id}",
+    "api.endpoints.series.throttle": 1000,
+    "api.endpoints.seriesSearch.template": "${baseUrl}/series/search",
+    "api.endpoints.seriesSearch.throttle": 1500,
+    "api.endpoints.updateSerieRating.template": "${baseUrl}/series/${series_id}/rating",
+    "api.endpoints.updateSerieRating.throttle": 1000,
+    "statusMapping.READING": 0,
+    "statusMapping.COMPLETED": 2,
+    "statusMapping.PLAN_TO_READ": 1,
+    "statusMapping.ON_HOLD": 4,
+    "statusMapping.DROPPED": 3,
+    "statusMapping.RE_READING": 101,
+    "ui.label": "MangaUpdates",
+    "ui.icon": "images/manga-updates.svg",
+    "ui.credentialsTemplate": [
+      {
+        "key": "username",
+        "label": "Username",
+        "type": "text",
+        "required": true,
+        "description": "MangaUpdates account username."
+      },
+      {
+        "key": "password",
+        "label": "Password",
+        "type": "password",
+        "required": true,
+        "description": "Account password used for session authentication."
+      }
+    ],
+    "connection.timeout.connect": 5000,
+    "connection.timeout.request": 30000,
+    "connection.timeout.search": 60000,
+    "connection.pool.maxSockets": 10,
+    "connection.pool.maxFreeSockets": 5,
+    "connection.pool.keepAlive": true,
+    "retry.enabled": true,
+    "retry.maxAttempts": 3,
+    "retry.backoff.type": "exponential",
+    "retry.backoff.initialDelay": 1000,
+    "retry.backoff.maxDelay": 10000,
+    "retry.backoff.multiplier": 2,
+    "retry.retryableErrors": [
+      "ETIMEDOUT",
+      "ECONNRESET",
+      "ECONNREFUSED",
+      502,
+      503,
+      504,
+      429
+    ],
+    "cache.enabled": true,
+    "cache.provider": "redis",
+    "cache.ttl.seriesMetadata": 86400,
+    "cache.ttl.searchResults": 3600,
+    "cache.ttl.readingLists": 1800,
+    "cache.ttl.userLists": 1800,
+    "cache.ttl.sessionToken": 43200,
+    "cache.ttl.coverUrls": 604800,
+    "cache.ttl.default": 3600,
+    "rateLimit.global.enabled": true,
+    "rateLimit.global.maxConcurrent": 5,
+    "rateLimit.global.maxPerSecond": 10,
+    "rateLimit.global.maxPerMinute": 100,
+    "rateLimit.global.queueSize": 50,
+    "rateLimit.perEndpoint.enabled": true,
+    "rateLimit.perEndpoint.defaultDelay": 1000,
+    "rateLimit.perEndpoint.login": 0,
+    "rateLimit.perEndpoint.getUserLists": 500,
+    "rateLimit.perEndpoint.listSearch": 1000,
+    "rateLimit.perEndpoint.listGetSeriesItem": 1000,
+    "rateLimit.perEndpoint.listUpdateSeries": 1000,
+    "rateLimit.perEndpoint.listAddSeries": 1000,
+    "rateLimit.perEndpoint.series": 1000,
+    "rateLimit.perEndpoint.seriesSearch": 1500,
+    "rateLimit.perEndpoint.updateSerieRating": 1000,
+    "resilience.circuitBreaker.enabled": false,
+    "resilience.circuitBreaker.failureThreshold": 5,
+    "resilience.circuitBreaker.failureWindow": 10000,
+    "resilience.circuitBreaker.openDuration": 30000,
+    "resilience.healthCheck.enabled": false,
+    "resilience.healthCheck.endpoint": "/series/1",
+    "resilience.healthCheck.interval": 60000
+  }
+}

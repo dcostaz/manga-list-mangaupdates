@@ -1,0 +1,964 @@
+{
+  "metadata": {
+    "componentName": "MangaUpdatesAPI",
+    "description": "MangaUpdates runtime tracker package settings definition (tracker-specific extension)",
+    "version": "1.0.0",
+    "lastModified": "2025-11-15T20:14:45.810Z",
+    "lifecycle": {
+      "bootstrapPhase": "early",
+      "dependencies": [],
+      "requiredBy": []
+    },
+    "categories": [
+      {
+        "id": "display",
+        "label": "Display & UI",
+        "description": "User interface and display options",
+        "order": 50,
+        "icon": "visibility"
+      },
+      {
+        "id": "general",
+        "label": "General",
+        "description": "Basic configuration options",
+        "order": 10,
+        "icon": "settings"
+      },
+      {
+        "id": "network",
+        "label": "Network & API",
+        "description": "Network connections and external API configuration",
+        "order": 40,
+        "icon": "cloud"
+      },
+      {
+        "id": "paths",
+        "label": "Paths & Directories",
+        "description": "File system paths and directory configuration",
+        "order": 20,
+        "icon": "folder"
+      },
+      {
+        "id": "performance",
+        "label": "Performance & Caching",
+        "description": "Performance tuning and caching configuration",
+        "order": 30,
+        "icon": "speed"
+      }
+    ],
+    "settingsContractVersion": "1.0.0"
+  },
+  "schema": {
+    "api.baseUrl": {
+      "type": "string",
+      "required": true,
+      "default": "https://api.mangaupdates.com/v1",
+      "description": "Base URL for MangaUpdates API v1",
+      "validation": {
+        "pattern": "^https://"
+      },
+      "readOnly": false,
+      "isBasic": true,
+      "category": "network",
+      "order": 200
+    },
+    "api.endpoints.login.template": {
+      "type": "string",
+      "required": true,
+      "default": "${baseUrl}/account/login",
+      "description": "Login endpoint template for session token authentication",
+      "readOnly": true,
+      "isBasic": false,
+      "category": "network",
+      "order": 210
+    },
+    "api.endpoints.login.throttle": {
+      "type": "number",
+      "required": false,
+      "default": 0,
+      "description": "Minimum delay between login requests (milliseconds)",
+      "validation": {
+        "min": 0,
+        "max": 60000
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 320
+    },
+    "api.endpoints.getUserLists.template": {
+      "type": "string",
+      "required": true,
+      "default": "${baseUrl}/lists",
+      "description": "Endpoint to retrieve user's reading lists",
+      "readOnly": true,
+      "isBasic": false,
+      "category": "network",
+      "order": 220
+    },
+    "api.endpoints.getUserLists.throttle": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Minimum delay between getUserLists requests (milliseconds)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 330
+    },
+    "api.endpoints.listSearch.template": {
+      "type": "string",
+      "required": true,
+      "default": "${baseUrl}/lists/${list_id}/search",
+      "description": "Endpoint to search series within a specific list",
+      "readOnly": true,
+      "isBasic": false,
+      "category": "network",
+      "order": 230
+    },
+    "api.endpoints.listSearch.throttle": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Minimum delay between listSearch requests (milliseconds)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 340
+    },
+    "api.endpoints.listSearch.perPage": {
+      "type": "number",
+      "required": false,
+      "default": 500,
+      "description": "Maximum results per page for list search",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 350
+    },
+    "api.endpoints.listGetSeriesItem.template": {
+      "type": "string",
+      "required": true,
+      "default": "${baseUrl}/lists/series/${series_id}?unrenderedFields=true",
+      "description": "Endpoint to get series status on user's list",
+      "readOnly": true,
+      "isBasic": false,
+      "category": "network",
+      "order": 240
+    },
+    "api.endpoints.listGetSeriesItem.throttle": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Minimum delay between listGetSeriesItem requests (milliseconds)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 360
+    },
+    "api.endpoints.listUpdateSeries.template": {
+      "type": "string",
+      "required": true,
+      "default": "${baseUrl}/lists/series/update",
+      "description": "Endpoint to update series on user's list",
+      "readOnly": true,
+      "isBasic": false,
+      "category": "network",
+      "order": 250
+    },
+    "api.endpoints.listUpdateSeries.throttle": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Minimum delay between listUpdateSeries requests (milliseconds)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 370
+    },
+    "api.endpoints.listAddSeries.template": {
+      "type": "string",
+      "required": true,
+      "default": "${baseUrl}/lists/series",
+      "description": "Endpoint to add series to user's list",
+      "readOnly": true,
+      "isBasic": false,
+      "category": "network",
+      "order": 260
+    },
+    "api.endpoints.listAddSeries.throttle": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Minimum delay between listAddSeries requests (milliseconds)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 380
+    },
+    "api.endpoints.series.template": {
+      "type": "string",
+      "required": true,
+      "default": "${baseUrl}/series/${series_id}",
+      "description": "Endpoint to get full series details by ID",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "network",
+      "order": 270
+    },
+    "api.endpoints.series.throttle": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Minimum delay between series requests (milliseconds)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 390
+    },
+    "api.endpoints.seriesSearch.template": {
+      "type": "string",
+      "required": true,
+      "default": "${baseUrl}/series/search",
+      "description": "Endpoint to search for series by title/metadata",
+      "readOnly": true,
+      "isBasic": false,
+      "category": "network",
+      "order": 280
+    },
+    "api.endpoints.seriesSearch.throttle": {
+      "type": "number",
+      "required": false,
+      "default": 1500,
+      "description": "Minimum delay between seriesSearch requests (milliseconds) - higher due to expensive operation",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 400
+    },
+    "api.endpoints.updateSerieRating.template": {
+      "type": "string",
+      "required": true,
+      "default": "${baseUrl}/series/${series_id}/rating",
+      "description": "Endpoint to update user's rating for a series",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "network",
+      "order": 290
+    },
+    "api.endpoints.updateSerieRating.throttle": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Minimum delay between updateSerieRating requests (milliseconds)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 410
+    },
+    "statusMapping.READING": {
+      "type": "number",
+      "required": true,
+      "default": 0,
+      "description": "MangaUpdates status code for currently reading",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "general",
+      "order": 70
+    },
+    "statusMapping.COMPLETED": {
+      "type": "number",
+      "required": true,
+      "default": 2,
+      "description": "MangaUpdates status code for completed",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "general",
+      "order": 80
+    },
+    "statusMapping.PLAN_TO_READ": {
+      "type": "number",
+      "required": true,
+      "default": 1,
+      "description": "MangaUpdates status code for plan to read",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "general",
+      "order": 90
+    },
+    "statusMapping.ON_HOLD": {
+      "type": "number",
+      "required": true,
+      "default": 4,
+      "description": "MangaUpdates status code for on hold",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "general",
+      "order": 100
+    },
+    "statusMapping.DROPPED": {
+      "type": "number",
+      "required": true,
+      "default": 3,
+      "description": "MangaUpdates status code for dropped",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "general",
+      "order": 110
+    },
+    "statusMapping.RE_READING": {
+      "type": "number",
+      "required": true,
+      "default": 101,
+      "description": "MangaUpdates status code for re-reading",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "general",
+      "order": 120
+    },
+    "ui.label": {
+      "type": "string",
+      "required": true,
+      "default": "MangaUpdates",
+      "description": "Display label for UI",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "display",
+      "order": 10
+    },
+    "ui.icon": {
+      "type": "string",
+      "required": true,
+      "default": "images/manga-updates.svg",
+      "description": "Path to icon image",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "paths",
+      "order": 310
+    },
+    "ui.credentialsTemplate": {
+      "type": "array",
+      "required": true,
+      "default": [
+        {
+          "key": "username",
+          "label": "Username",
+          "type": "text",
+          "required": true,
+          "description": "MangaUpdates account username."
+        },
+        {
+          "key": "password",
+          "label": "Password",
+          "type": "password",
+          "required": true,
+          "description": "Account password used for session authentication."
+        }
+      ],
+      "description": "Credential template definition for tracker auth prompts",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "display",
+      "order": 20
+    },
+    "credentials.primary": {
+      "type": "credential",
+      "required": false,
+      "default": null,
+      "label": "MangaUpdates Credentials",
+      "description": "Securely store the MangaUpdates username and password used by the tracker wrapper.",
+      "helpText": "Opens the encrypted credential modal so operators can set MangaUpdates credentials directly from the Trackers settings tab.",
+      "isBasic": true,
+      "readOnly": false,
+      "implementationStatus": "implemented",
+      "category": "general",
+      "order": 40,
+      "tags": [
+        "credentials",
+        "tracker",
+        "security"
+      ],
+      "uiHints": {
+        "widget": "credential",
+        "serviceName": "mangaupdates",
+        "credentialType": "tracker",
+        "credentialKeys": [
+          "username",
+          "password"
+        ]
+      }
+    },
+    "connection.timeout.connect": {
+      "type": "number",
+      "required": true,
+      "default": 5000,
+      "description": "TCP connection timeout in milliseconds (P0 - CRITICAL: prevents infinite connection hangs)",
+      "validation": {
+        "min": 1000,
+        "max": 30000
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 420
+    },
+    "connection.timeout.request": {
+      "type": "number",
+      "required": true,
+      "default": 30000,
+      "description": "Total request timeout in milliseconds (P0 - CRITICAL: prevents infinite waits)",
+      "validation": {
+        "min": 5000,
+        "max": 300000
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 430
+    },
+    "connection.timeout.search": {
+      "type": "number",
+      "required": true,
+      "default": 60000,
+      "description": "Search request timeout in milliseconds - longer for complex queries (P0)",
+      "validation": {
+        "min": 10000,
+        "max": 300000
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 440
+    },
+    "connection.pool.maxSockets": {
+      "type": "number",
+      "required": true,
+      "default": 10,
+      "description": "Maximum concurrent connections to API (P0)",
+      "validation": {
+        "min": 1,
+        "max": 50
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 450
+    },
+    "connection.pool.maxFreeSockets": {
+      "type": "number",
+      "required": true,
+      "default": 5,
+      "description": "Maximum idle connections in pool (P0)",
+      "validation": {
+        "min": 0,
+        "max": 25
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 460
+    },
+    "connection.pool.keepAlive": {
+      "type": "boolean",
+      "required": true,
+      "default": true,
+      "description": "Enable keep-alive for connection reuse (P0)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "general",
+      "order": 130
+    },
+    "retry.enabled": {
+      "type": "boolean",
+      "required": true,
+      "default": true,
+      "description": "Enable automatic retry on transient failures (P0 - CRITICAL: improves reliability)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "general",
+      "order": 140
+    },
+    "retry.maxAttempts": {
+      "type": "number",
+      "required": true,
+      "default": 3,
+      "description": "Maximum retry attempts before giving up (P0)",
+      "validation": {
+        "min": 1,
+        "max": 10
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 470
+    },
+    "retry.backoff.type": {
+      "type": "string",
+      "required": true,
+      "default": "exponential",
+      "description": "Backoff strategy: exponential, linear, or fixed (P0)",
+      "validation": {
+        "enum": [
+          "exponential",
+          "linear",
+          "fixed"
+        ]
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "general",
+      "order": 150
+    },
+    "retry.backoff.initialDelay": {
+      "type": "number",
+      "required": true,
+      "default": 1000,
+      "description": "Initial delay before first retry in milliseconds (P0)",
+      "validation": {
+        "min": 100,
+        "max": 10000
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "general",
+      "order": 160
+    },
+    "retry.backoff.maxDelay": {
+      "type": "number",
+      "required": true,
+      "default": 10000,
+      "description": "Maximum delay between retries in milliseconds (P0)",
+      "validation": {
+        "min": 1000,
+        "max": 60000
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 480
+    },
+    "retry.backoff.multiplier": {
+      "type": "number",
+      "required": true,
+      "default": 2,
+      "description": "Exponential backoff multiplier (P0)",
+      "validation": {
+        "min": 1,
+        "max": 10
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "general",
+      "order": 170
+    },
+    "retry.retryableErrors": {
+      "type": "array",
+      "required": true,
+      "default": [
+        "ETIMEDOUT",
+        "ECONNRESET",
+        "ECONNREFUSED",
+        502,
+        503,
+        504,
+        429
+      ],
+      "description": "Retryable HTTP status codes and network error names (P0)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "general",
+      "order": 180
+    },
+    "cache.enabled": {
+      "type": "boolean",
+      "required": true,
+      "default": true,
+      "description": "Enable Redis caching (P0 - CRITICAL: reduces API load)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 490
+    },
+    "cache.provider": {
+      "type": "string",
+      "required": true,
+      "default": "redis",
+      "description": "Cache provider: redis, memory, or none (P0)",
+      "validation": {
+        "enum": [
+          "redis",
+          "memory",
+          "none"
+        ]
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 500
+    },
+    "cache.ttl.seriesMetadata": {
+      "type": "number",
+      "required": true,
+      "default": 86400,
+      "description": "TTL for series metadata in seconds (24h) - stable data (P0 - CRITICAL: currently infinite)",
+      "validation": {
+        "min": 60,
+        "max": 2592000
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 510
+    },
+    "cache.ttl.searchResults": {
+      "type": "number",
+      "required": true,
+      "default": 3600,
+      "description": "TTL for search results in seconds (1h) - changes moderately (P0 - CRITICAL: currently infinite)",
+      "validation": {
+        "min": 60,
+        "max": 86400
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 520
+    },
+    "cache.ttl.readingLists": {
+      "type": "number",
+      "required": true,
+      "default": 1800,
+      "description": "TTL for reading list contents in seconds (30m) - user modifies (P0 - CRITICAL: currently infinite)",
+      "validation": {
+        "min": 60,
+        "max": 86400
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 530
+    },
+    "cache.ttl.userLists": {
+      "type": "number",
+      "required": true,
+      "default": 1800,
+      "description": "TTL for user's list names in seconds (30m) - user creates new (P0 - currently hardcoded 1h)",
+      "validation": {
+        "min": 60,
+        "max": 86400
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 540
+    },
+    "cache.ttl.sessionToken": {
+      "type": "number",
+      "required": true,
+      "default": 43200,
+      "description": "TTL for session token in seconds (12h) - matches API expiry (P0 - currently hardcoded)",
+      "validation": {
+        "min": 300,
+        "max": 86400
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 550
+    },
+    "cache.ttl.coverUrls": {
+      "type": "number",
+      "required": true,
+      "default": 604800,
+      "description": "TTL for cover image URLs in seconds (7d) - never change (P0 - currently hardcoded 24h)",
+      "validation": {
+        "min": 3600,
+        "max": 2592000
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 560
+    },
+    "cache.ttl.default": {
+      "type": "number",
+      "required": true,
+      "default": 3600,
+      "description": "Default TTL for uncategorized data in seconds (1h) - safe fallback (P0)",
+      "validation": {
+        "min": 60,
+        "max": 86400
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 570
+    },
+    "rateLimit.global.enabled": {
+      "type": "boolean",
+      "required": true,
+      "default": true,
+      "description": "Enable global rate limiting across all endpoints (P1 - HIGH: prevents API overload)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 580
+    },
+    "rateLimit.global.maxConcurrent": {
+      "type": "number",
+      "required": true,
+      "default": 5,
+      "description": "Maximum concurrent requests allowed (P1 - HIGH: currently unlimited)",
+      "validation": {
+        "min": 1,
+        "max": 50
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 590
+    },
+    "rateLimit.global.maxPerSecond": {
+      "type": "number",
+      "required": true,
+      "default": 10,
+      "description": "Maximum requests per second globally (P1 - HIGH: unknown API limit)",
+      "validation": {
+        "min": 1,
+        "max": 100
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 600
+    },
+    "rateLimit.global.maxPerMinute": {
+      "type": "number",
+      "required": true,
+      "default": 100,
+      "description": "Maximum requests per minute globally (P1)",
+      "validation": {
+        "min": 10,
+        "max": 1000
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 610
+    },
+    "rateLimit.global.queueSize": {
+      "type": "number",
+      "required": true,
+      "default": 50,
+      "description": "Maximum queued requests before rejection (P1)",
+      "validation": {
+        "min": 10,
+        "max": 500
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 620
+    },
+    "rateLimit.perEndpoint.enabled": {
+      "type": "boolean",
+      "required": true,
+      "default": true,
+      "description": "Enable per-endpoint minimum delays (P1 - HIGH: currently only 1/20 methods use)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 630
+    },
+    "rateLimit.perEndpoint.defaultDelay": {
+      "type": "number",
+      "required": true,
+      "default": 1000,
+      "description": "Default delay between same-endpoint calls in milliseconds (P1)",
+      "validation": {
+        "min": 0,
+        "max": 60000
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 640
+    },
+    "rateLimit.perEndpoint.login": {
+      "type": "number",
+      "required": false,
+      "default": 0,
+      "description": "Delay for login endpoint (ms) - no throttle, only called once",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 650
+    },
+    "rateLimit.perEndpoint.getUserLists": {
+      "type": "number",
+      "required": false,
+      "default": 500,
+      "description": "Delay for getUserLists endpoint (ms) - cheap operation",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 660
+    },
+    "rateLimit.perEndpoint.listSearch": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Delay for listSearch endpoint (ms) - moderate cost",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 670
+    },
+    "rateLimit.perEndpoint.listGetSeriesItem": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Delay for listGetSeriesItem endpoint (ms)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 680
+    },
+    "rateLimit.perEndpoint.listUpdateSeries": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Delay for listUpdateSeries endpoint (ms)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 690
+    },
+    "rateLimit.perEndpoint.listAddSeries": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Delay for listAddSeries endpoint (ms)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 700
+    },
+    "rateLimit.perEndpoint.series": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Delay for series endpoint (ms)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 710
+    },
+    "rateLimit.perEndpoint.seriesSearch": {
+      "type": "number",
+      "required": false,
+      "default": 1500,
+      "description": "Delay for seriesSearch endpoint (ms) - expensive operation",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 720
+    },
+    "rateLimit.perEndpoint.updateSerieRating": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Delay for updateSerieRating endpoint (ms)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 730
+    },
+    "resilience.circuitBreaker.enabled": {
+      "type": "boolean",
+      "required": true,
+      "default": false,
+      "description": "Enable circuit breaker pattern (P1 - HIGH: disabled until Phase 10.8)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "display",
+      "order": 30
+    },
+    "resilience.circuitBreaker.failureThreshold": {
+      "type": "number",
+      "required": true,
+      "default": 5,
+      "description": "Failures before opening circuit (P1)",
+      "validation": {
+        "min": 1,
+        "max": 20
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "display",
+      "order": 40
+    },
+    "resilience.circuitBreaker.failureWindow": {
+      "type": "number",
+      "required": true,
+      "default": 10000,
+      "description": "Time window for counting failures in milliseconds (P1)",
+      "validation": {
+        "min": 1000,
+        "max": 60000
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "display",
+      "order": 50
+    },
+    "resilience.circuitBreaker.openDuration": {
+      "type": "number",
+      "required": true,
+      "default": 30000,
+      "description": "Duration circuit stays open in milliseconds (P1)",
+      "validation": {
+        "min": 5000,
+        "max": 300000
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "display",
+      "order": 60
+    },
+    "resilience.healthCheck.enabled": {
+      "type": "boolean",
+      "required": true,
+      "default": false,
+      "description": "Enable periodic health checks (P2 - MEDIUM: disabled until Phase 10.8)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "general",
+      "order": 190
+    },
+    "resilience.healthCheck.endpoint": {
+      "type": "string",
+      "required": false,
+      "default": "/series/1",
+      "description": "Endpoint to use for health checks (P2)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "network",
+      "order": 300
+    },
+    "resilience.healthCheck.interval": {
+      "type": "number",
+      "required": true,
+      "default": 60000,
+      "description": "Health check interval in milliseconds (P2)",
+      "validation": {
+        "min": 10000,
+        "max": 600000
+      },
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 740
+    }
+  }
+}
