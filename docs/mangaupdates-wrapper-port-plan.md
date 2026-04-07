@@ -106,6 +106,8 @@ Implemented now in target runtime wrapper:
 	`searchTrackersRaw`, `_findExactMatch`, `searchCovers`, `downloadCover`)
 7. MangaDex runtime structure comparison report:
 	`docs/runtime-structure-consistency-report.md`
+8. Host runtime loader integration verification completed via install/list/reload/remove
+	flow using TrackerPackageLoader and built MangaUpdates zip artifact.
 
 Remaining work is hardening parity gaps and any optional host-only helpers.
 

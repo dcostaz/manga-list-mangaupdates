@@ -116,3 +116,6 @@ Structured function-by-function port plan for MangaUpdates wrapper migration:
 
 1. d:/manga-list-mangaupdates/docs/mangaupdates-wrapper-port-plan.md
 2. d:/manga-list-mangaupdates/docs/runtime-structure-consistency-report.md
+
+The consistency report includes host runtime loader verification evidence
+(install/list/reload/remove) for the built MangaUpdates package artifact.

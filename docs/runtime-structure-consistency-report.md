@@ -52,10 +52,50 @@ Details: wrapper methods return raw transport envelopes while mapper contract te
 
 These differences are intentional and do not violate runtime architecture parity.
 
+## Host Loader Verification (Definition of Done Item 4)
+
+Verification command executed in manga-list host repository (temporary appData root):
+
+1. Build package: `npm run build` in manga-list-mangaupdates.
+2. Install + activate package via TrackerPackageLoader.installRuntimePackage.
+3. Validate package visibility via TrackerPackageLoader.listRuntimePackages.
+4. Reload package via TrackerPackageLoader.reloadRuntimePackage.
+5. Remove extracted package and zip via TrackerPackageLoader.removeRuntimePackage.
+
+Observed verification summary:
+
+```json
+{
+	"install": {
+		"success": true,
+		"packageName": "manga-list-mangaupdates-runtime-1.0.0",
+		"activated": true
+	},
+	"list": {
+		"count": 1,
+		"isExtracted": true,
+		"hasZip": true,
+		"hostCompatible": true,
+		"dtoCompatible": true
+	},
+	"reload": {
+		"moduleKeys": [
+			"mangaupdates"
+		],
+		"loadedServices": [
+			"mangaupdates"
+		],
+		"hasWrapperClass": true,
+		"hasSettingsClass": true,
+		"hasMapperClass": true
+	}
+}
+```
+
 ## Conclusion
 
 Definition of Done item 5 is satisfied:
 Comparison report generated against MangaDex runtime structure confirming architectural consistency.
 
-Remaining project-level verification is outside this report scope:
-Definition of Done item 4 (runtime artifact install/load through manga-list runtime loader) must be confirmed in host integration context.
+Definition of Done item 4 is satisfied:
+Runtime artifact installs and loads through manga-list runtime loader with compatible host/dto contracts and runtime module exports.
