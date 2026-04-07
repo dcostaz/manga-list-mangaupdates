@@ -64,6 +64,9 @@ Wave 0 adds dedicated contract harness suites:
 3. `tests/wave0-settings-contract.test.cjs`
 4. `tests/wave0-settings-baseline-matrix.test.cjs`
 
+Wave 0 mapper coverage includes compatibility checks for enriched raw payload
+shapes (numeric IDs, nested series metadata, and search result fallback fields).
+
 Note: The baseline matrix suite validates MangaUpdates locally and validates MangaDex when
 `../manga-list-mangadex` exists in the same parent directory layout.
 

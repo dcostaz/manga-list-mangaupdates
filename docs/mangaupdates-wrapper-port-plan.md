@@ -116,6 +116,7 @@ Objective:
 Status:
 - In progress (started 2026-04-06).
 - Added initial test harness suites for wrapper, mapper, settings, and baseline matrix validation.
+- Added mapper compatibility checks for enriched raw payload fields and nested series payload shapes.
 
 Tasks:
 1. Add wrapper unit tests for method contracts and error behavior.

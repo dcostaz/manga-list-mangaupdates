@@ -50,8 +50,46 @@ test('wave0 mapper contract - toSearchResultDtos maps valid rows and drops inval
     alternativeTitles: [],
     coverUrl: null,
     metadata: null,
-    confidence: 0,
+    confidence: 100,
     matchType: 'exact',
+  });
+});
+
+test('wave0 mapper contract - toSearchResultDtos accepts enriched rows with record fallback fields', () => {
+  const mapper = new MangaUpdatesTrackerMapper();
+  const dtoList = mapper.toSearchResultDtos({
+    payload: {
+      data: [
+        {
+          id: 654,
+          hit_title: 'The Beginning After the End',
+          matchType: 'fuzzy',
+          confidence: 87,
+          metadata: { matchedTitle: 'TBATE' },
+          record: {
+            title: 'The Beginning After the End',
+            associated: [{ title: 'TBATE' }],
+            image: {
+              url: {
+                thumb: 'https://img.example/tbate-thumb.jpg',
+              },
+            },
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(dtoList.length, 1);
+  assert.deepEqual(dtoList[0], {
+    source: 'mangaupdates',
+    trackerId: '654',
+    title: 'The Beginning After the End',
+    alternativeTitles: ['TBATE'],
+    coverUrl: 'https://img.example/tbate-thumb.jpg',
+    metadata: { matchedTitle: 'TBATE' },
+    confidence: 87,
+    matchType: 'fuzzy',
   });
 });
 
@@ -80,6 +118,44 @@ test('wave0 mapper contract - toSeriesDetailDto maps required fields', () => {
     year: null,
     url: null,
     metadata: null,
+  });
+});
+
+test('wave0 mapper contract - toSeriesDetailDto maps enriched nested series payload', () => {
+  const mapper = new MangaUpdatesTrackerMapper();
+  const dto = mapper.toSeriesDetailDto({
+    payload: {
+      id: 777,
+      title: 'Tower of God',
+      url: 'https://www.mangaupdates.com/series/tower-of-god',
+      series: {
+        series_id: 777,
+        title: 'Tower of God',
+        associated: [{ title: 'Sin-ui Tap' }],
+        description: 'A long-running webtoon.',
+        status: 'Ongoing',
+        year: 2010,
+      },
+    },
+  });
+
+  assert.deepEqual(dto, {
+    trackerId: '777',
+    source: 'mangaupdates',
+    title: 'Tower of God',
+    alternativeTitles: ['Sin-ui Tap'],
+    description: 'A long-running webtoon.',
+    status: 'Ongoing',
+    year: 2010,
+    url: 'https://www.mangaupdates.com/series/tower-of-god',
+    metadata: {
+      series_id: 777,
+      title: 'Tower of God',
+      associated: [{ title: 'Sin-ui Tap' }],
+      description: 'A long-running webtoon.',
+      status: 'Ongoing',
+      year: 2010,
+    },
   });
 });
 
