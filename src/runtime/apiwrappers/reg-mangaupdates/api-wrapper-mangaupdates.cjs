@@ -14,6 +14,8 @@ const SERVICE_NAME = 'mangaupdates';
 /** @typedef {import('../../../../types/trackertypedefs').TrackerCredentials} TrackerCredentials */
 /** @typedef {import('../../../../types/trackertypedefs').TrackerCacheAdapterLike} TrackerCacheAdapterLike */
 /** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesTokenResponse} MangaUpdatesTokenResponse */
+/** @typedef {import('../../../../types/trackertypedefs').TrackerUserProgress} TrackerUserProgress */
+/** @typedef {import('../../../../types/trackertypedefs').TrackerReadingStatus} TrackerReadingStatus */
 
 /**
  * @param {string} html
@@ -71,6 +73,9 @@ function createFallbackHttpClient() {
       },
     },
     put: async () => {
+      throw new Error('HTTP client is not configured for MangaUpdates runtime wrapper.');
+    },
+    get: async () => {
       throw new Error('HTTP client is not configured for MangaUpdates runtime wrapper.');
     },
   };
@@ -153,9 +158,10 @@ class MangaUpdatesAPIWrapper {
 
     this.bearerToken = null;
     this._defaultTokenName = 'session_token';
+    this.credentials = null;
     this.onCredentialsRequired = typeof onCredentialsRequired === 'function'
       ? onCredentialsRequired
-      : async () => {};
+      : async () => null;
     this.httpClient = providedHttpClient && typeof providedHttpClient === 'object'
       ? providedHttpClient
       : createDefaultHttpClient();
@@ -247,7 +253,7 @@ class MangaUpdatesAPIWrapper {
 
     const onCredentialsRequired = options && typeof options === 'object' && typeof options.onCredentialsRequired === 'function'
       ? options.onCredentialsRequired
-      : async () => {};
+      : async () => null;
     const directHttpClient = options && typeof options === 'object' && options.httpClient && typeof options.httpClient === 'object'
       ? options.httpClient
       : null;
@@ -277,6 +283,74 @@ class MangaUpdatesAPIWrapper {
    */
   static get serviceName() {
     return SERVICE_NAME;
+  }
+
+  /**
+   * @returns {Promise<TrackerCredentials | null>}
+   */
+  async getCredentials() {
+    return this.credentials && typeof this.credentials === 'object'
+      ? { ...this.credentials }
+      : null;
+  }
+
+  /**
+   * @param {TrackerCredentials} credentials
+   * @returns {Promise<TrackerCredentials>}
+   */
+  async setCredentials(credentials) {
+    if (!credentials || typeof credentials !== 'object') {
+      throw new Error('Credentials must be an object.');
+    }
+
+    this.credentials = { ...credentials };
+    return { ...this.credentials };
+  }
+
+  /**
+   * @param {boolean} [forceRefresh]
+   * @returns {Promise<string>}
+   */
+  async getToken(forceRefresh = false) {
+    const cacheKey = this._getTokenCacheKey();
+    if (!forceRefresh && this.bearerToken) {
+      return this.bearerToken;
+    }
+
+    if (!forceRefresh && this.cacheAdapter) {
+      const cached = await this.cacheAdapter.getValue(cacheKey);
+      if (cached) {
+        this.bearerToken = cached;
+        return cached;
+      }
+    }
+
+    let credentials = await this.getCredentials();
+    if (!credentials && typeof this.onCredentialsRequired === 'function') {
+      const provided = await this.onCredentialsRequired({
+        serviceName: SERVICE_NAME,
+        settings: this.settings,
+      });
+
+      if (provided && typeof provided === 'object') {
+        await this.setCredentials(provided);
+        credentials = provided;
+      }
+    }
+
+    if (!credentials) {
+      throw new Error('Credentials not found and callback did not provide credentials.');
+    }
+
+    const tokenData = await this._fetchNewToken(credentials, { forceRefresh });
+    const token = await this._extractToken(tokenData);
+    if (!token) {
+      return '';
+    }
+
+    await this._cacheToken(tokenData);
+    this.bearerToken = token;
+    return token;
   }
 
   /**
@@ -348,18 +422,39 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * @param {string} templateKey
+   * @param {Record<string, string | number>} [replacements]
    * @returns {string}
    */
-  _resolveLoginEndpoint() {
-    const template = this._resolveSettingValue('api.endpoints.login.template');
-    const baseUrl = this._resolveSettingValue('api.baseUrl');
-
-    if (typeof template !== 'string' || !template) {
+  _resolveEndpoint(templateKey, replacements = {}) {
+    const template = this._resolveSettingValue(templateKey);
+    if (typeof template !== 'string' || template.length === 0) {
       return '';
     }
 
-    const resolvedBaseUrl = typeof baseUrl === 'string' ? baseUrl : '';
-    return template.replace('${baseUrl}', resolvedBaseUrl);
+    const baseUrl = this._resolveSettingValue('api.baseUrl');
+    /** @type {Record<string, string>} */
+    const allReplacements = {
+      baseUrl: typeof baseUrl === 'string' ? baseUrl : '',
+    };
+
+    for (const [key, value] of Object.entries(replacements)) {
+      allReplacements[key] = String(value);
+    }
+
+    let resolved = template;
+    for (const [key, value] of Object.entries(allReplacements)) {
+      resolved = resolved.split(`$\{${key}\}`).join(value);
+    }
+
+    return resolved;
+  }
+
+  /**
+   * @returns {string}
+   */
+  _resolveLoginEndpoint() {
+    return this._resolveEndpoint('api.endpoints.login.template');
   }
 
   /**
@@ -455,6 +550,239 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * @param {string|number} trackerId
+   * @returns {Promise<string | null>}
+   */
+  async getSeriesUrl(trackerId) {
+    const raw = await this.getSeriesByIdRaw(trackerId);
+    const payload = raw && typeof raw === 'object' && raw.payload && typeof raw.payload === 'object'
+      ? raw.payload
+      : null;
+
+    if (payload && typeof payload.url === 'string' && payload.url.trim()) {
+      return payload.url;
+    }
+
+    const nestedSeries = payload && payload.series && typeof payload.series === 'object'
+      ? payload.series
+      : null;
+    if (nestedSeries && typeof nestedSeries.url === 'string' && nestedSeries.url.trim()) {
+      return nestedSeries.url;
+    }
+
+    return null;
+  }
+
+  /**
+   * @returns {Promise<Array<Record<string, unknown>>>}
+   */
+  async getUserLists() {
+    const bearerToken = await this.getToken();
+    if (!bearerToken) {
+      return [];
+    }
+
+    const refreshRequired = await this.refresh();
+    const cacheKey = 'mangaupdates_user_lists';
+    if (!refreshRequired && this.cacheAdapter) {
+      const cached = await this.cacheAdapter.getValue(cacheKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            return parsed;
+          }
+        } catch (error) {
+          // Ignore cache parse errors and continue to live request.
+        }
+      }
+    }
+
+    const endpoint = this._resolveEndpoint('api.endpoints.getUserLists.template');
+    if (!endpoint) {
+      throw new Error('(getUserLists) Missing getUserLists config');
+    }
+
+    if (!this.httpClient || typeof this.httpClient.get !== 'function') {
+      throw new Error('(getUserLists) HTTP client get method is not configured');
+    }
+
+    const response = await this.httpClient.get(endpoint, {
+      headers: {
+        Authorization: `Bearer ${bearerToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const responseData = response && typeof response === 'object' ? response.data : null;
+    const lists = Array.isArray(responseData)
+      ? responseData
+      : responseData && typeof responseData === 'object' && Array.isArray(responseData.results)
+        ? responseData.results
+        : [];
+
+    if (this.cacheAdapter) {
+      await this.cacheAdapter.setValue(cacheKey, JSON.stringify(lists), 3600);
+    }
+
+    if (refreshRequired) {
+      await this.refresh(false);
+    }
+
+    return lists;
+  }
+
+  /**
+   * @param {number} [id]
+   * @returns {Promise<Record<string, unknown> | null>}
+   */
+  async getSeriesListStatus(id = 0) {
+    const refreshRequired = await this.refresh();
+    const cacheKey = `getSeriesListStatus%%${id}`;
+    if (!refreshRequired && this.cacheAdapter) {
+      const cached = await this.cacheAdapter.getValue(cacheKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (parsed && typeof parsed === 'object') {
+            return parsed;
+          }
+        } catch (error) {
+          // Ignore cache parse errors and continue to live request.
+        }
+      }
+    }
+
+    const bearerToken = await this.getToken();
+    if (!bearerToken) {
+      return null;
+    }
+
+    const endpoint = this._resolveEndpoint('api.endpoints.listGetSeriesItem.template', {
+      series_id: id,
+    });
+    if (!endpoint) {
+      throw new Error('(getSeriesListStatus) Missing listGetSeriesItem config');
+    }
+
+    if (!this.httpClient || typeof this.httpClient.get !== 'function') {
+      throw new Error('(getSeriesListStatus) HTTP client get method is not configured');
+    }
+
+    try {
+      const response = await this.httpClient.get(endpoint, {
+        headers: {
+          Authorization: `Bearer ${bearerToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const payload = response && typeof response === 'object' && response.data && typeof response.data === 'object'
+        ? response.data
+        : null;
+
+      if (payload && this.cacheAdapter) {
+        await this.cacheAdapter.setValue(cacheKey, JSON.stringify(payload), 3600);
+      }
+
+      if (refreshRequired) {
+        await this.refresh(false);
+      }
+
+      return payload;
+    } catch (error) {
+      const status = error && typeof error === 'object' && error.response && typeof error.response === 'object'
+        ? error.response.status
+        : error && typeof error === 'object' && 'statusCode' in error
+          ? error.statusCode
+          : null;
+      if (status === 404) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * @param {number} listId
+   * @returns {Promise<TrackerReadingStatus>}
+   */
+  async getReadingStatusFromListId(listId) {
+    try {
+      const userLists = await this.getUserLists();
+      if (!Array.isArray(userLists) || userLists.length === 0) {
+        return 'READING';
+      }
+
+      const listIndex = userLists.findIndex((entry) => entry && typeof entry === 'object' && entry.list_id === listId);
+      if (listIndex < 0) {
+        return 'READING';
+      }
+
+      /** @type {TrackerReadingStatus[]} */
+      const statuses = ['READING', 'COMPLETED', 'PLAN_TO_READ', 'ON_HOLD', 'DROPPED', 'RE_READING'];
+
+      for (const status of statuses) {
+        const mappingFromFlatKey = this._resolveSettingValue(`statusMapping.${status}`);
+        if (typeof mappingFromFlatKey === 'number' && mappingFromFlatKey === listIndex) {
+          return status;
+        }
+
+        const nestedStatusMapping = this._resolveSettingValue('statusMapping');
+        if (nestedStatusMapping
+          && typeof nestedStatusMapping === 'object'
+          && typeof nestedStatusMapping[status] === 'number'
+          && nestedStatusMapping[status] === listIndex
+        ) {
+          return status;
+        }
+      }
+
+      return 'READING';
+    } catch (error) {
+      return 'READING';
+    }
+  }
+
+  /**
+   * @param {string|number} seriesId
+   * @returns {Promise<TrackerUserProgress | null>}
+   */
+  async getUserProgress(seriesId) {
+    const listStatus = await this.getSeriesListStatus(Number(seriesId));
+    if (!listStatus || typeof listStatus !== 'object') {
+      return null;
+    }
+
+    const statusPayload = listStatus.status && typeof listStatus.status === 'object'
+      ? listStatus.status
+      : null;
+
+    /** @type {TrackerUserProgress} */
+    const progress = {};
+    if (statusPayload && typeof statusPayload.chapter === 'number') {
+      progress.chapter = statusPayload.chapter;
+    }
+    if (statusPayload && typeof statusPayload.volume === 'number') {
+      progress.volume = statusPayload.volume;
+    }
+
+    const timeAdded = listStatus.time_added && typeof listStatus.time_added === 'object'
+      ? listStatus.time_added
+      : null;
+    if (timeAdded && typeof timeAdded.timestamp === 'number') {
+      progress.lastUpdated = new Date(timeAdded.timestamp * 1000).toISOString();
+    }
+
+    if (typeof listStatus.list_id === 'number') {
+      progress.status = await this.getReadingStatusFromListId(listStatus.list_id);
+    }
+
+    return progress;
+  }
+
+  /**
    * @param {string} query
    * @returns {Promise<MangaUpdatesRawSearchResponse>}
    */
@@ -493,6 +821,20 @@ class MangaUpdatesAPIWrapper {
    */
   async getUserProgressRaw(trackerId) {
     const normalizedTrackerId = typeof trackerId === 'string' ? trackerId.trim() : '';
+
+    try {
+      const progress = await this.getUserProgress(trackerId);
+      if (progress && typeof progress === 'object' && Object.keys(progress).length > 0) {
+        return {
+          trackerId: 'mangaupdates',
+          operation: 'getUserProgressRaw',
+          payload: progress,
+        };
+      }
+    } catch (error) {
+      // Fallback placeholder preserves baseline contract behavior when read path is unavailable.
+    }
+
     return {
       trackerId: 'mangaupdates',
       operation: 'getUserProgressRaw',

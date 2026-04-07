@@ -1,9 +1,28 @@
 export type TrackerServiceSettings = Record<string, unknown>;
 export type TrackerCredentials = Record<string, string>;
+export type TrackerReadingStatus =
+  | 'READING'
+  | 'COMPLETED'
+  | 'PLAN_TO_READ'
+  | 'ON_HOLD'
+  | 'DROPPED'
+  | 'RE_READING';
+
+export interface TrackerUserProgress {
+  chapter?: number;
+  volume?: number;
+  rating?: number;
+  lastUpdated?: string;
+  status?: TrackerReadingStatus;
+}
 
 export type CredentialsRequiredCallback = (
   details?: Record<string, unknown>
-) => void | Promise<void>;
+) =>
+  | TrackerCredentials
+  | null
+  | undefined
+  | Promise<TrackerCredentials | null | undefined>;
 
 export interface TrackerHttpResponseInterceptorLike {
   use(
@@ -19,6 +38,10 @@ export interface TrackerHttpClientLike {
   put?: (
     url: string,
     data?: unknown,
+    config?: Record<string, unknown>
+  ) => Promise<{ data?: unknown }>;
+  get?: (
+    url: string,
     config?: Record<string, unknown>
   ) => Promise<{ data?: unknown }>;
 }

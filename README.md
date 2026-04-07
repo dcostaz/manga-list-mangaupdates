@@ -81,6 +81,14 @@ Wave 2 adds token lifecycle suite:
 This suite covers refresh toggle persistence, token cache key + TTL semantics,
 token extraction/caching, and cache-first token fetch behavior.
 
+Wave 3 baseline adds read-path infrastructure suite:
+
+1. `tests/wave3-read-baseline.test.cjs`
+
+This suite covers credential-backed token retrieval, user-list read/caching,
+list status retrieval, list-id to status mapping, progress normalization,
+and series URL extraction contract behavior.
+
 ## Port Plan
 
 Structured function-by-function port plan for MangaUpdates wrapper migration:

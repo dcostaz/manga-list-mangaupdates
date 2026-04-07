@@ -175,6 +175,12 @@ Exit gate:
 Objective:
 - Port core read APIs and normalization pipeline.
 
+Status:
+- In progress (started 2026-04-06).
+- Added baseline read-path behavior for:
+	`getSeriesUrl`, `getUserLists`, `getSeriesListStatus`, `getReadingStatusFromListId`, `getUserProgress`, and `getUserProgressRaw`.
+- Added Wave 3 baseline tests for token-backed list/status/progress flows.
+
 Functions:
 1. getSeriesUrl
 2. getUserLists
