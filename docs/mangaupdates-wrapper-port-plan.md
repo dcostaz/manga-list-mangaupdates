@@ -104,6 +104,8 @@ Implemented now in target runtime wrapper:
 5. Wave 4 write-path mutation baseline, including series and cover mutations
 6. Wave 5 search and cover orchestration baseline (`searchTrackers`,
 	`searchTrackersRaw`, `_findExactMatch`, `searchCovers`, `downloadCover`)
+7. MangaDex runtime structure comparison report:
+	`docs/runtime-structure-consistency-report.md`
 
 Remaining work is hardening parity gaps and any optional host-only helpers.
 

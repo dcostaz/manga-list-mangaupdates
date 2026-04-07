@@ -115,3 +115,4 @@ cover download behavior.
 Structured function-by-function port plan for MangaUpdates wrapper migration:
 
 1. d:/manga-list-mangaupdates/docs/mangaupdates-wrapper-port-plan.md
+2. d:/manga-list-mangaupdates/docs/runtime-structure-consistency-report.md
