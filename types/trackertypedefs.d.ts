@@ -44,6 +44,11 @@ export interface TrackerHttpClientLike {
     url: string,
     config?: Record<string, unknown>
   ) => Promise<{ data?: unknown }>;
+  post?: (
+    url: string,
+    data?: unknown,
+    config?: Record<string, unknown>
+  ) => Promise<{ data?: unknown }>;
 }
 
 export interface TrackerCacheAdapterLike {

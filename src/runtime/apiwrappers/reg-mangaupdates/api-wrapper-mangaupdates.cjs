@@ -63,6 +63,23 @@ function parseBoolean(value) {
 }
 
 /**
+ * @param {string} value
+ * @returns {string}
+ */
+function toSlug(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/**
  * @returns {TrackerHttpClientLike}
  */
 function createFallbackHttpClient() {
@@ -76,6 +93,9 @@ function createFallbackHttpClient() {
       throw new Error('HTTP client is not configured for MangaUpdates runtime wrapper.');
     },
     get: async () => {
+      throw new Error('HTTP client is not configured for MangaUpdates runtime wrapper.');
+    },
+    post: async () => {
       throw new Error('HTTP client is not configured for MangaUpdates runtime wrapper.');
     },
   };
@@ -936,6 +956,111 @@ class MangaUpdatesAPIWrapper {
     } catch (error) {
       return null;
     }
+  }
+
+  /**
+   * @param {{ search?: string, perpage?: number }} payload
+   * @param {{ useCache?: boolean }} [options]
+   * @returns {Promise<Array<Record<string, unknown>>>}
+   */
+  async serieSearch(payload, options = {}) {
+    if (!payload || typeof payload !== 'object' || typeof payload.search !== 'string' || payload.search.trim().length === 0) {
+      return [];
+    }
+
+    const useCache = !(options && typeof options === 'object' && options.useCache === false);
+    const perpage = typeof payload.perpage === 'number' && Number.isFinite(payload.perpage) && payload.perpage > 0
+      ? payload.perpage
+      : 10;
+    const cacheKey = `serieSearch%%${toSlug(payload.search)}%%${perpage}`;
+
+    const refreshRequired = await this.refresh();
+    if (!refreshRequired && useCache && this.cacheAdapter) {
+      const cached = await this.cacheAdapter.getValue(cacheKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            return parsed;
+          }
+        } catch (error) {
+          // Ignore cache parse errors and continue to live request.
+        }
+      }
+    }
+
+    const endpoint = this._resolveEndpoint('api.endpoints.seriesSearch.template');
+    if (!endpoint) {
+      throw new Error('(serieSearch) Missing seriesSearch config');
+    }
+
+    const bearerToken = await this.getToken();
+    if (!bearerToken) {
+      return [];
+    }
+
+    if (!this.httpClient || typeof this.httpClient.post !== 'function') {
+      throw new Error('(serieSearch) HTTP client post method is not configured');
+    }
+
+    const response = await this.httpClient.post(
+      endpoint,
+      {
+        ...payload,
+        perpage,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${bearerToken}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    const responseData = response && typeof response === 'object' ? response.data : null;
+    const results = responseData && typeof responseData === 'object' && Array.isArray(responseData.results)
+      ? responseData.results
+      : Array.isArray(responseData)
+        ? responseData
+        : [];
+
+    if (results.length > 0 && this.cacheAdapter) {
+      const ttlCandidate = this._resolveSettingValue('cache.ttl.searchResults');
+      const ttl = typeof ttlCandidate === 'number' && Number.isFinite(ttlCandidate) && ttlCandidate > 0
+        ? ttlCandidate
+        : 3600;
+      await this.cacheAdapter.setValue(cacheKey, JSON.stringify(results), ttl);
+    }
+
+    if (refreshRequired) {
+      await this.refresh(false);
+    }
+
+    return results;
+  }
+
+  /**
+   * @param {number} [id]
+   * @returns {Promise<string | null>}
+   */
+  async getSeriesCover(id = 0) {
+    const detail = await this.getSerieDetail(id);
+    if (!detail || typeof detail !== 'object') {
+      return null;
+    }
+
+    const image = detail.image && typeof detail.image === 'object' ? detail.image : null;
+    const url = image && image.url && typeof image.url === 'object' ? image.url : null;
+
+    if (url && typeof url.original === 'string' && url.original.trim()) {
+      return url.original;
+    }
+
+    if (url && typeof url.thumb === 'string' && url.thumb.trim()) {
+      return url.thumb;
+    }
+
+    return null;
   }
 
   /**

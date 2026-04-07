@@ -178,7 +178,7 @@ Objective:
 Status:
 - In progress (started 2026-04-06).
 - Added baseline read-path behavior for:
-	`getSeriesUrl`, `getUserLists`, `getSeriesListStatus`, `getReadingStatusFromListId`, `getUserProgress`, `getUserProgressRaw`, `getSerieDetail`, `getSeriesById`, and `getSeriesByIdRaw`.
+	`getSeriesUrl`, `getUserLists`, `getSeriesListStatus`, `getReadingStatusFromListId`, `getUserProgress`, `getUserProgressRaw`, `getSerieDetail`, `getSeriesById`, `getSeriesByIdRaw`, `serieSearch`, and `getSeriesCover`.
 - Added Wave 3 baseline tests for token-backed list/status/progress flows.
 
 Functions:

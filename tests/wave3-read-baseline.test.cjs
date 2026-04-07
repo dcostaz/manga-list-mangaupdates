@@ -51,12 +51,15 @@ function createMockCacheAdapter() {
  *  client: {
  *    interceptors: { response: { use: (onFulfilled: Function, onRejected: Function) => number } },
  *    put: (url: string, payload?: unknown) => Promise<{ data: unknown }>,
- *    get: (url: string) => Promise<{ data: unknown }>
+ *    get: (url: string) => Promise<{ data: unknown }>,
+ *    post: (url: string, payload?: unknown) => Promise<{ data: unknown }>
  *  },
  *  hooks: {
  *    putCalls: Array<{ url: string, payload: unknown }>,
  *    getCalls: string[],
- *    getHandler: (url: string) => unknown
+ *    postCalls: Array<{ url: string, payload: unknown }>,
+ *    getHandler: (url: string) => unknown,
+ *    postHandler: (url: string, payload: unknown) => unknown
  *  }
  * }}
  */
@@ -64,7 +67,9 @@ function createMockHttpClient() {
   const hooks = {
     putCalls: [],
     getCalls: [],
+    postCalls: [],
     getHandler: () => [],
+    postHandler: () => ({ results: [] }),
   };
 
   const client = {
@@ -88,6 +93,11 @@ function createMockHttpClient() {
     async get(url) {
       hooks.getCalls.push(url);
       const data = hooks.getHandler(url);
+      return { data };
+    },
+    async post(url, payload) {
+      hooks.postCalls.push({ url, payload });
+      const data = hooks.postHandler(url, payload);
       return { data };
     },
   };
@@ -402,4 +412,102 @@ test('wave3 series detail - getSeriesByIdRaw returns transport payload from deta
   assert.equal(raw.payload.title, 'Kaiju No. 8');
   assert.equal(raw.payload.url, 'https://www.mangaupdates.com/series/kaiju-no-8');
   assert.equal(raw.payload.series.series_id, 88);
+});
+
+test('wave3 search flow - serieSearch calls endpoint and returns results', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.postHandler = (url, payload) => {
+    if (url.endsWith('/series/search')) {
+      return {
+        results: [
+          {
+            series_id: 900,
+            title: payload.search,
+          },
+        ],
+      };
+    }
+
+    return { results: [] };
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.seriesSearch.template': '${baseUrl}/series/search',
+      'cache.ttl.searchResults': 300,
+    },
+    httpClient: client,
+    cacheAdapter,
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const first = await wrapper.serieSearch({ search: 'Blue Lock', perpage: 5 });
+  assert.equal(first.length, 1);
+  assert.equal(first[0].series_id, 900);
+  assert.equal(httpHooks.postCalls.length, 1);
+
+  const second = await wrapper.serieSearch({ search: 'Blue Lock', perpage: 5 });
+  assert.equal(second.length, 1);
+  assert.equal(httpHooks.postCalls.length, 1);
+});
+
+test('wave3 search flow - serieSearch useCache false bypasses cache', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.postHandler = () => ({ results: [{ series_id: 1, title: 'One Piece' }] });
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.seriesSearch.template': '${baseUrl}/series/search',
+    },
+    httpClient: client,
+    cacheAdapter,
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  await wrapper.serieSearch({ search: 'One Piece', perpage: 5 }, { useCache: false });
+  await wrapper.serieSearch({ search: 'One Piece', perpage: 5 }, { useCache: false });
+  assert.equal(httpHooks.postCalls.length, 2);
+});
+
+test('wave3 read flow - getSeriesCover returns best available image URL', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client } = createMockHttpClient();
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+    },
+    httpClient: client,
+    cacheAdapter,
+  });
+
+  wrapper.getSerieDetail = async () => ({
+    image: {
+      url: {
+        original: 'https://img.example/cover-original.jpg',
+        thumb: 'https://img.example/cover-thumb.jpg',
+      },
+    },
+  });
+
+  assert.equal(await wrapper.getSeriesCover(10), 'https://img.example/cover-original.jpg');
+
+  wrapper.getSerieDetail = async () => ({
+    image: {
+      url: {
+        thumb: 'https://img.example/cover-thumb.jpg',
+      },
+    },
+  });
+
+  assert.equal(await wrapper.getSeriesCover(10), 'https://img.example/cover-thumb.jpg');
 });

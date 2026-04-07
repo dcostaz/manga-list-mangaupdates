@@ -87,7 +87,8 @@ Wave 3 baseline adds read-path infrastructure suite:
 
 This suite covers credential-backed token retrieval, user-list read/caching,
 list status retrieval, list-id to status mapping, progress normalization,
-series URL extraction, detailed series lookup, and normalization contract behavior.
+series URL extraction, detailed series lookup, series search, cover retrieval,
+and normalization contract behavior.
 
 ## Port Plan
 
