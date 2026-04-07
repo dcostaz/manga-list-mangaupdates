@@ -110,6 +110,10 @@ Everything else is pending port.
 Objective:
 - Freeze runtime contract and create focused tests before behavior port.
 
+Status:
+- In progress (started 2026-04-06).
+- Added initial test harness suites for wrapper, mapper, settings, and baseline matrix validation.
+
 Tasks:
 1. Add wrapper unit tests for method contracts and error behavior.
 2. Add mapper tests for DTO conversion parity from expected raw payloads.

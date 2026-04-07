@@ -57,6 +57,16 @@ Type definitions governance:
 npm test
 ```
 
+Wave 0 adds dedicated contract harness suites:
+
+1. `tests/wave0-wrapper-contract.test.cjs`
+2. `tests/wave0-mapper-contract.test.cjs`
+3. `tests/wave0-settings-contract.test.cjs`
+4. `tests/wave0-settings-baseline-matrix.test.cjs`
+
+Note: The baseline matrix suite validates MangaUpdates locally and validates MangaDex when
+`../manga-list-mangadex` exists in the same parent directory layout.
+
 ## Port Plan
 
 Structured function-by-function port plan for MangaUpdates wrapper migration:
