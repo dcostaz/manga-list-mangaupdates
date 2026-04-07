@@ -245,6 +245,7 @@ Status:
 - In progress (started 2026-04-07).
 - Added Wave 5 baseline behavior for search orchestration and cover transfer.
 - Added `tests/wave5-search-cover-baseline.test.cjs` to lock match/search/cover flows.
+- Added exact-first fuzzy ranking hardening for deterministic candidate ordering.
 
 Functions:
 1. searchTrackers
@@ -255,6 +256,7 @@ Functions:
 
 Notes:
 - Keep matching behavior deterministic and test with title variants.
+- Prioritize exact title matches ahead of fuzzy candidates and fallback rows.
 - Keep progress callback event shape stable.
 
 Exit gate:

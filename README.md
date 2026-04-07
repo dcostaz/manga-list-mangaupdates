@@ -104,7 +104,8 @@ Wave 5 baseline adds search and cover orchestration suite:
 1. `tests/wave5-search-cover-baseline.test.cjs`
 
 This suite covers deterministic title matching, raw search transport shaping,
-cover lookup by tracker identity, and cached cover download behavior.
+exact-first fuzzy ranking, cover lookup by tracker identity, and cached
+cover download behavior.
 
 ## Port Plan
 

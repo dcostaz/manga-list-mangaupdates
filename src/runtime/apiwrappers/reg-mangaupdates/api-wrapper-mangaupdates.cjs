@@ -1806,6 +1806,7 @@ class MangaUpdatesAPIWrapper {
 
     const matchResult = await this._findExactMatch(titles, useCache);
     if (matchResult.match) {
+      const resolvedMatchType = matchResult.matchType === 'fuzzy' ? 'fuzzy' : 'exact';
       const record = matchResult.match && typeof matchResult.match === 'object' && matchResult.match.record
         && typeof matchResult.match.record === 'object'
         ? matchResult.match.record
@@ -1817,11 +1818,16 @@ class MangaUpdatesAPIWrapper {
       if (Number.isFinite(seriesId) && seriesId > 0) {
         const detail = await this.getSerieDetail(seriesId, { useCache });
         if (detail && typeof detail === 'object') {
-          return [this._normalizeSeriesData(detail)];
+          const normalized = this._normalizeSeriesData(detail);
+          return [{
+            ...normalized,
+            matchType: resolvedMatchType,
+            confidence: resolvedMatchType === 'exact' ? 100 : 80,
+          }];
         }
       }
 
-      return [this._mapSearchResult(matchResult.match, 'exact')];
+      return [this._mapSearchResult(matchResult.match, resolvedMatchType)];
     }
 
     for (const title of titles) {
@@ -1869,7 +1875,12 @@ class MangaUpdatesAPIWrapper {
           continue;
         }
 
-        const items = searchResults.slice(0, 5).map((result) => {
+        const prioritized = this._rankSearchCandidates(titles, searchResults, 5);
+        const rows = prioritized.length > 0
+          ? prioritized.map((entry) => entry.result)
+          : searchResults.slice(0, 5);
+
+        const items = rows.map((result) => {
           const row = result && typeof result === 'object' && result.record && typeof result.record === 'object'
             ? result.record
             : null;
@@ -1956,9 +1967,11 @@ class MangaUpdatesAPIWrapper {
     emit('running', 'Searching tracker for cover candidates');
     const matchResult = await this._findExactMatch(titles, useCache);
     if (!matchResult.match) {
-      emit('error', 'No exact cover candidate found');
+      emit('error', 'No cover candidate found');
       return [];
     }
+
+    const resolvedMatchType = matchResult.matchType === 'fuzzy' ? 'fuzzy' : 'exact';
 
     const row = matchResult.match && typeof matchResult.match === 'object' && matchResult.match.record
       && typeof matchResult.match.record === 'object'
@@ -1971,7 +1984,7 @@ class MangaUpdatesAPIWrapper {
     if (Number.isFinite(seriesId) && seriesId > 0) {
       const detail = await this.getSerieDetail(seriesId, { useCache });
       if (detail && this._extractCoverUrl(detail)) {
-        const normalized = [this._normalizeCoverSearchResult(detail, mangaCoreEntry, 'exact')];
+        const normalized = [this._normalizeCoverSearchResult(detail, mangaCoreEntry, resolvedMatchType)];
         emit('complete', 'Cover lookup completed from exact match', { results: normalized });
         return normalized;
       }
@@ -1983,7 +1996,7 @@ class MangaUpdatesAPIWrapper {
       return [];
     }
 
-    const normalized = [this._normalizeCoverSearchResult(row, mangaCoreEntry, 'manual')];
+    const normalized = [this._normalizeCoverSearchResult(row, mangaCoreEntry, resolvedMatchType)];
     emit('complete', 'Cover lookup completed from search fallback', { results: normalized });
     return normalized;
   }
@@ -2058,7 +2071,13 @@ class MangaUpdatesAPIWrapper {
   /**
    * @param {string[]} titles
    * @param {boolean} [useCache]
-   * @returns {Promise<{ match: Record<string, unknown> | null, attempts: number, cacheHit: boolean }>}
+   * @returns {Promise<{
+   *  match: Record<string, unknown> | null,
+   *  attempts: number,
+   *  cacheHit: boolean,
+   *  matchType: 'exact' | 'fuzzy' | null,
+   *  similarity: number,
+   * }>}
    */
   async _findExactMatch(titles, useCache = true) {
     if (!Array.isArray(titles) || titles.length === 0) {
@@ -2066,6 +2085,8 @@ class MangaUpdatesAPIWrapper {
         match: null,
         attempts: 0,
         cacheHit: false,
+        matchType: null,
+        similarity: 0,
       };
     }
 
@@ -2074,6 +2095,9 @@ class MangaUpdatesAPIWrapper {
     }
 
     let attempts = 0;
+    let bestFuzzyMatch = null;
+    let bestFuzzySimilarity = 0;
+
     for (const title of titles) {
       attempts += 1;
       const searchResults = await this.serieSearch(
@@ -2090,40 +2114,26 @@ class MangaUpdatesAPIWrapper {
         continue;
       }
 
-      const exactMatch = searchResults.find((result) => {
-        /** @type {string[]} */
-        const candidateTitles = [];
-        if (result && typeof result === 'object' && typeof result.hit_title === 'string') {
-          candidateTitles.push(result.hit_title);
-        }
-
-        const row = result && typeof result === 'object' && result.record && typeof result.record === 'object'
-          ? result.record
-          : null;
-        if (row && typeof row.title === 'string') {
-          candidateTitles.push(row.title);
-        }
-
-        const associated = row && Array.isArray(row.associated) ? row.associated : [];
-        for (const entry of associated) {
-          if (entry && typeof entry === 'object' && typeof entry.title === 'string') {
-            candidateTitles.push(entry.title);
-          }
-        }
-
-        return this._hasExactTitleMatch(titles, candidateTitles);
-      });
-
+      const ranked = this._rankSearchCandidates(titles, searchResults, searchResults.length);
+      const exactMatch = ranked.find((entry) => entry.matchType === 'exact');
       if (exactMatch) {
         if (!useCache) {
           await this.refresh(false);
         }
 
         return {
-          match: exactMatch,
+          match: exactMatch.result,
           attempts,
           cacheHit: false,
+          matchType: 'exact',
+          similarity: 1,
         };
+      }
+
+      const fuzzyMatch = ranked.find((entry) => entry.matchType === 'fuzzy');
+      if (fuzzyMatch && fuzzyMatch.similarity > bestFuzzySimilarity) {
+        bestFuzzyMatch = fuzzyMatch.result;
+        bestFuzzySimilarity = fuzzyMatch.similarity;
       }
     }
 
@@ -2131,10 +2141,186 @@ class MangaUpdatesAPIWrapper {
       await this.refresh(false);
     }
 
+    if (bestFuzzyMatch) {
+      return {
+        match: bestFuzzyMatch,
+        attempts,
+        cacheHit: false,
+        matchType: 'fuzzy',
+        similarity: bestFuzzySimilarity,
+      };
+    }
+
     return {
       match: null,
       attempts,
       cacheHit: false,
+      matchType: null,
+      similarity: 0,
+    };
+  }
+
+  /**
+   * @param {string[]} targetTitles
+   * @param {Array<Record<string, unknown>>} searchResults
+   * @param {number} [limit]
+   * @returns {Array<{ result: Record<string, unknown>, matchType: 'exact'|'fuzzy'|'search', similarity: number, index: number }>}
+   */
+  _rankSearchCandidates(targetTitles, searchResults, limit = 5) {
+    /** @type {Array<{ result: Record<string, unknown>, matchType: 'exact'|'fuzzy'|'search', similarity: number, index: number }>}
+     */
+    const ranked = [];
+
+    for (let index = 0; index < searchResults.length; index += 1) {
+      const result = searchResults[index];
+      const candidateTitles = this._collectCandidateTitles(result);
+      const similarityData = this._calculateTitleSimilarity(targetTitles, candidateTitles);
+
+      if (similarityData.hasExactMatch) {
+        ranked.push({
+          result,
+          matchType: 'exact',
+          similarity: 1,
+          index,
+        });
+        continue;
+      }
+
+      if (similarityData.bestSimilarity >= 0.55) {
+        ranked.push({
+          result,
+          matchType: 'fuzzy',
+          similarity: similarityData.bestSimilarity,
+          index,
+        });
+        continue;
+      }
+
+      ranked.push({
+        result,
+        matchType: 'search',
+        similarity: similarityData.bestSimilarity,
+        index,
+      });
+    }
+
+    ranked.sort((a, b) => {
+      const aRank = a.matchType === 'exact' ? 0 : a.matchType === 'fuzzy' ? 1 : 2;
+      const bRank = b.matchType === 'exact' ? 0 : b.matchType === 'fuzzy' ? 1 : 2;
+      if (aRank !== bRank) {
+        return aRank - bRank;
+      }
+
+      if (b.similarity !== a.similarity) {
+        return b.similarity - a.similarity;
+      }
+
+      return a.index - b.index;
+    });
+
+    return ranked.slice(0, limit);
+  }
+
+  /**
+   * @param {Record<string, unknown>} result
+   * @returns {string[]}
+   */
+  _collectCandidateTitles(result) {
+    /** @type {string[]} */
+    const titles = [];
+    if (result && typeof result === 'object' && typeof result.hit_title === 'string' && result.hit_title.trim()) {
+      titles.push(result.hit_title);
+    }
+
+    const row = result && typeof result === 'object' && result.record && typeof result.record === 'object'
+      ? result.record
+      : null;
+    if (row && typeof row.title === 'string' && row.title.trim()) {
+      titles.push(row.title);
+    }
+
+    const associated = row && Array.isArray(row.associated) ? row.associated : [];
+    for (const entry of associated) {
+      if (entry && typeof entry === 'object' && typeof entry.title === 'string' && entry.title.trim()) {
+        titles.push(entry.title);
+      }
+    }
+
+    const deduped = [];
+    const seen = new Set();
+    for (const title of titles) {
+      const normalized = title.trim();
+      const key = normalized.toLowerCase();
+      if (!normalized || seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      deduped.push(normalized);
+    }
+
+    return deduped;
+  }
+
+  /**
+   * @param {string[]} expectedTitles
+   * @param {string[]} candidateTitles
+   * @returns {{ hasExactMatch: boolean, bestSimilarity: number }}
+   */
+  _calculateTitleSimilarity(expectedTitles, candidateTitles) {
+    let hasExactMatch = false;
+    let bestSimilarity = 0;
+
+    for (const expectedTitle of expectedTitles) {
+      if (typeof expectedTitle !== 'string') {
+        continue;
+      }
+
+      const expectedSlug = toSlug(expectedTitle);
+      if (!expectedSlug) {
+        continue;
+      }
+
+      for (const candidateTitle of candidateTitles) {
+        if (typeof candidateTitle !== 'string') {
+          continue;
+        }
+
+        const candidateSlug = toSlug(candidateTitle);
+        if (!candidateSlug) {
+          continue;
+        }
+
+        if (candidateSlug === expectedSlug) {
+          hasExactMatch = true;
+          bestSimilarity = 1;
+          continue;
+        }
+
+        let similarity = 0;
+        if (candidateSlug.includes(expectedSlug) || expectedSlug.includes(candidateSlug)) {
+          similarity = 0.85;
+        } else {
+          const expectedTokens = expectedSlug.split('-').filter(Boolean);
+          const candidateTokens = candidateSlug.split('-').filter(Boolean);
+          const expectedSet = new Set(expectedTokens);
+          const candidateSet = new Set(candidateTokens);
+          const intersection = [...expectedSet].filter((token) => candidateSet.has(token)).length;
+          const union = new Set([...expectedSet, ...candidateSet]).size;
+          if (union > 0) {
+            similarity = intersection / union;
+          }
+        }
+
+        if (similarity > bestSimilarity) {
+          bestSimilarity = similarity;
+        }
+      }
+    }
+
+    return {
+      hasExactMatch,
+      bestSimilarity,
     };
   }
 
@@ -2233,7 +2419,7 @@ class MangaUpdatesAPIWrapper {
 
   /**
    * @param {Record<string, unknown>} searchResult
-   * @param {'exact' | 'manual'} matchType
+  * @param {'exact' | 'fuzzy' | 'manual'} matchType
    * @returns {Record<string, unknown>}
    */
   _mapSearchResult(searchResult, matchType) {
@@ -2262,7 +2448,7 @@ class MangaUpdatesAPIWrapper {
           ? searchResult.hit_title
           : null,
       },
-      confidence: matchType === 'exact' ? 100 : 0,
+      confidence: matchType === 'exact' ? 100 : matchType === 'fuzzy' ? 80 : 0,
       matchType,
     };
   }
@@ -2297,7 +2483,7 @@ class MangaUpdatesAPIWrapper {
   /**
    * @param {Record<string, unknown>} detail
    * @param {Record<string, unknown>} mangaCoreEntry
-   * @param {'exact' | 'manual'} matchType
+  * @param {'exact' | 'fuzzy' | 'manual'} matchType
    * @returns {Record<string, unknown>}
    */
   _normalizeCoverSearchResult(detail, mangaCoreEntry, matchType) {
@@ -2327,7 +2513,7 @@ class MangaUpdatesAPIWrapper {
       mimeType: 'image/jpeg',
       canonicalUrl: detail && typeof detail.url === 'string' ? detail.url : null,
       fetchedAt: new Date().toISOString(),
-      confidence: matchType === 'exact' ? 100 : 0,
+      confidence: matchType === 'exact' ? 100 : matchType === 'fuzzy' ? 80 : 0,
       matchType,
     };
   }

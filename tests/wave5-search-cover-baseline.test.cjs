@@ -181,6 +181,73 @@ test('wave5 search flow - searchTrackers returns normalized exact match from det
   assert.equal(matches[0].matchType, 'exact');
 });
 
+test('wave5 search flow - searchTrackers returns fuzzy match when exact title is unavailable', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.postHandler = (url) => {
+    if (String(url).includes('/series/search')) {
+      return {
+        status: 200,
+        data: {
+          results: [
+            {
+              hit_title: 'Solo Leveling Ragnarok',
+              record: {
+                series_id: 322,
+                title: 'Solo Leveling Ragnarok',
+              },
+            },
+          ],
+        },
+      };
+    }
+
+    return { status: 200, data: { results: [] } };
+  };
+
+  httpHooks.getHandler = (url) => {
+    if (String(url).includes('/series/322')) {
+      return {
+        status: 200,
+        data: {
+          series_id: 322,
+          title: 'Solo Leveling Ragnarok',
+          image: {
+            url: {
+              original: 'https://images.example/solo-leveling-ragnarok.jpg',
+            },
+          },
+        },
+      };
+    }
+
+    return { status: 404, data: {} };
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.seriesSearch.template': '${baseUrl}/series/search',
+      'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
+    },
+    httpClient: client,
+    cacheAdapter,
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const matches = await wrapper.searchTrackers(
+    { title: 'Solo Leveling' },
+    { useCache: false },
+  );
+
+  assert.equal(matches.length, 1);
+  assert.equal(matches[0].trackerId, 322);
+  assert.equal(matches[0].matchType, 'fuzzy');
+  assert.equal(matches[0].confidence, 80);
+});
+
 test('wave5 search flow - searchTrackersRaw maps transport rows from live search', async () => {
   const { cacheAdapter } = createMockCacheAdapter();
   const { client, hooks: httpHooks } = createMockHttpClient();
@@ -226,6 +293,58 @@ test('wave5 search flow - searchTrackersRaw maps transport rows from live search
   assert.deepEqual(raw.payload.data[0], {
     id: '654',
     title: 'The Beginning After the End',
+  });
+});
+
+test('wave5 search flow - searchTrackersRaw prioritizes exact over fuzzy rows', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.postHandler = (url) => {
+    if (String(url).includes('/series/search')) {
+      return {
+        status: 200,
+        data: {
+          results: [
+            {
+              hit_title: 'Solo Leveling Ragnarok',
+              record: {
+                series_id: 900,
+                title: 'Solo Leveling Ragnarok',
+              },
+            },
+            {
+              hit_title: 'Solo Leveling',
+              record: {
+                series_id: 901,
+                title: 'Solo Leveling',
+              },
+            },
+          ],
+        },
+      };
+    }
+
+    return { status: 200, data: { results: [] } };
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.seriesSearch.template': '${baseUrl}/series/search',
+    },
+    httpClient: client,
+    cacheAdapter,
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const raw = await wrapper.searchTrackersRaw({ title: 'Solo Leveling' }, { useCache: false });
+
+  assert.equal(raw.payload.data.length >= 2, true);
+  assert.deepEqual(raw.payload.data[0], {
+    id: '901',
+    title: 'Solo Leveling',
   });
 });
 
@@ -275,6 +394,72 @@ test('wave5 cover flow - searchCovers resolves cover from tracker id detail', as
   assert.equal(covers[0].mangaCoreKey, 'uuid-1');
   assert.equal(covers[0].url, 'https://images.example/tower-of-god.jpg');
   assert.equal(covers[0].fileName, 'tower-of-god.jpg');
+});
+
+test('wave5 cover flow - searchCovers can return fuzzy cover candidate', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.postHandler = (url) => {
+    if (String(url).includes('/series/search')) {
+      return {
+        status: 200,
+        data: {
+          results: [
+            {
+              hit_title: 'Tower of God Side Story',
+              record: {
+                series_id: 778,
+                title: 'Tower of God Side Story',
+              },
+            },
+          ],
+        },
+      };
+    }
+
+    return { status: 200, data: { results: [] } };
+  };
+
+  httpHooks.getHandler = (url) => {
+    if (String(url).includes('/series/778')) {
+      return {
+        status: 200,
+        data: {
+          series_id: 778,
+          title: 'Tower of God Side Story',
+          image: {
+            url: {
+              original: 'https://images.example/tog-side-story.jpg',
+            },
+          },
+        },
+      };
+    }
+
+    return { status: 404, data: {} };
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.seriesSearch.template': '${baseUrl}/series/search',
+      'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
+    },
+    httpClient: client,
+    cacheAdapter,
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const covers = await wrapper.searchCovers(
+    { key: 'uuid-2', title: 'Tower of God' },
+    { useCache: false },
+  );
+
+  assert.equal(covers.length, 1);
+  assert.equal(covers[0].matchType, 'fuzzy');
+  assert.equal(covers[0].confidence, 80);
 });
 
 test('wave5 cover flow - downloadCover writes file and reuses cache on second request', async () => {
