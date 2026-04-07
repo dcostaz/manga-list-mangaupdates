@@ -209,8 +209,9 @@ Objective:
 Status:
 - In progress (started 2026-04-06).
 - Added baseline mutation behavior for:
-	`updateListSeries`, `addListSeries`, and `updateStatus`.
-- Added Wave 4 baseline tests for payload shaping and status-list resolution.
+	`updateListSeries`, `addListSeries`, `updateStatus`, `updateSerieRating`, and `setUserProgress`.
+- Added Wave 4 baseline tests for payload shaping, status-list resolution,
+	rating mutation, and progress push outcomes.
 
 Functions:
 1. updateSeries

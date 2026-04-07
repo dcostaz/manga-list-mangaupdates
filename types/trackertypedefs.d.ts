@@ -54,6 +54,7 @@ export interface TrackerHttpClientLike {
 export interface TrackerCacheAdapterLike {
   getValue(key: string): Promise<string | null>;
   setValue(key: string, value: string, ttlSeconds?: number): Promise<void>;
+  deleteValue?(key: string): Promise<void>;
 }
 
 export interface MangaUpdatesTokenResponse {

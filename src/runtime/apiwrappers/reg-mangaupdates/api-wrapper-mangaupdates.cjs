@@ -153,6 +153,9 @@ function createInMemoryCacheAdapter() {
         expiresAt,
       });
     },
+    async deleteValue(key) {
+      cache.delete(key);
+    },
   };
 }
 
@@ -1280,6 +1283,201 @@ class MangaUpdatesAPIWrapper {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`(MangaUpdates.updateStatus) ${message}`);
     }
+  }
+
+  /**
+   * @param {string|number} id
+   * @param {Record<string, unknown>} payload
+   * @returns {Promise<{ status: number, data: unknown }>}
+   */
+  async updateSerieRating(id, payload) {
+    let bearerToken = '';
+    try {
+      bearerToken = await this.getToken();
+    } catch (error) {
+      bearerToken = '';
+    }
+
+    if (!bearerToken) {
+      return { status: 401, data: { reason: 'Not authenticated' } };
+    }
+
+    const endpoint = this._resolveEndpoint('api.endpoints.updateSerieRating.template', {
+      series_id: id,
+    });
+    if (!endpoint) {
+      throw new Error('(updateSerieRating) Missing updateSerieRating config');
+    }
+
+    if (!this.httpClient || typeof this.httpClient.put !== 'function') {
+      throw new Error('(updateSerieRating) HTTP client put method is not configured');
+    }
+
+    try {
+      const response = await this.httpClient.put(
+        endpoint,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${bearerToken}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      const responseData = response && typeof response === 'object' ? response.data : null;
+      if (responseData && typeof responseData === 'object' && responseData.status === 'EXCEPTION') {
+        return { status: 400, data: responseData };
+      }
+
+      return {
+        status: response && typeof response === 'object' && typeof response.status === 'number' ? response.status : 200,
+        data: responseData,
+      };
+    } catch (error) {
+      if (error && typeof error === 'object' && error.response && typeof error.response === 'object') {
+        const status = typeof error.response.status === 'number' ? error.response.status : 500;
+        const data = 'data' in error.response ? error.response.data : null;
+        return { status, data };
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * @param {string|number} seriesId
+   * @param {TrackerUserProgress} [progress]
+   * @returns {Promise<Record<string, unknown>>}
+   */
+  async setUserProgress(seriesId, progress = {}) {
+    if (!seriesId) {
+      throw new Error('(setUserProgress) seriesId is required');
+    }
+
+    const numericSeriesId = Number(seriesId);
+    if (Number.isNaN(numericSeriesId)) {
+      throw new Error('(setUserProgress) Invalid seriesId');
+    }
+
+    const existingStatus = await this.getSeriesListStatus(numericSeriesId);
+    if (!existingStatus) {
+      return {
+        success: false,
+        error: 'Series is not present in MangaUpdates reading list. Subscribe before pushing progress.',
+      };
+    }
+
+    const statusMappingResolved = this._resolveSettingValue('statusMapping');
+    /** @type {Record<string, number>} */
+    const statusMapping = statusMappingResolved && typeof statusMappingResolved === 'object'
+      ? { ...statusMappingResolved }
+      : {};
+    /** @type {TrackerReadingStatus[]} */
+    const knownStatuses = ['READING', 'COMPLETED', 'PLAN_TO_READ', 'ON_HOLD', 'DROPPED', 'RE_READING'];
+    for (const status of knownStatuses) {
+      const flatValue = this._resolveSettingValue(`statusMapping.${status}`);
+      if (typeof flatValue === 'number') {
+        statusMapping[status] = flatValue;
+      }
+    }
+
+    const baseListId = existingStatus && typeof existingStatus === 'object' && typeof existingStatus.list_id === 'number'
+      ? existingStatus.list_id
+      : null;
+    let targetListId = baseListId;
+    let listChanged = false;
+
+    if (progress.status) {
+      const mappedListId = statusMapping[progress.status];
+      if (mappedListId !== undefined && mappedListId !== null && mappedListId !== targetListId) {
+        targetListId = mappedListId;
+        listChanged = true;
+      }
+    }
+
+    /** @type {Record<string, number>} */
+    const statusPayload = {};
+    if (typeof progress.chapter === 'number' && progress.chapter >= 0) {
+      statusPayload.chapter = Number(progress.chapter);
+    }
+    if (typeof progress.volume === 'number' && progress.volume >= 0) {
+      statusPayload.volume = Number(progress.volume);
+    }
+
+    /** @type {string[]} */
+    const updatedFields = [];
+    const statusKeys = Object.keys(statusPayload);
+    const needsListUpdate = listChanged || statusKeys.length > 0;
+
+    if (needsListUpdate) {
+      /** @type {Record<string, unknown>} */
+      const listPayload = {
+        series: { id: numericSeriesId },
+        list_id: targetListId,
+      };
+
+      if (statusKeys.length > 0) {
+        listPayload.status = statusPayload;
+      }
+
+      const updateResult = await this.updateListSeries(listPayload);
+      if (updateResult.status && updateResult.status >= 400) {
+        const errorReason = updateResult && typeof updateResult === 'object' && updateResult.data && typeof updateResult.data === 'object'
+          ? updateResult.data.reason
+          : null;
+        return {
+          success: false,
+          error: `Failed to update reading list entry: ${typeof errorReason === 'string' ? errorReason : 'Unknown error'}`,
+        };
+      }
+
+      if (statusPayload.chapter !== undefined) {
+        updatedFields.push('chapter');
+      }
+      if (statusPayload.volume !== undefined) {
+        updatedFields.push('volume');
+      }
+      if (listChanged) {
+        updatedFields.push('status');
+      }
+
+      if (this.cacheAdapter && typeof this.cacheAdapter.deleteValue === 'function') {
+        await this.cacheAdapter.deleteValue(`getSeriesListStatus%%${numericSeriesId}`);
+      }
+    }
+
+    if (typeof progress.rating === 'number' && progress.rating >= 0) {
+      const ratingResult = await this.updateSerieRating(String(numericSeriesId), {
+        rating: Number(progress.rating),
+      });
+
+      if (ratingResult.status && ratingResult.status >= 400) {
+        const errorReason = ratingResult && typeof ratingResult === 'object' && ratingResult.data && typeof ratingResult.data === 'object'
+          ? ratingResult.data.reason
+          : null;
+        return {
+          success: false,
+          updatedFields: updatedFields.length > 0 ? updatedFields : undefined,
+          error: `Failed to update rating: ${typeof errorReason === 'string' ? errorReason : 'Unknown error'}`,
+        };
+      }
+
+      updatedFields.push('rating');
+    }
+
+    if (updatedFields.length === 0) {
+      return {
+        success: true,
+        message: 'No changes required',
+      };
+    }
+
+    return {
+      success: true,
+      updatedFields,
+      message: `Updated ${updatedFields.join(', ')}`,
+    };
   }
 
   /**
