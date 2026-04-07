@@ -74,6 +74,13 @@ Wave 1 adds runtime init and infrastructure behavior suite:
 This suite covers init-path settings resolution, interceptor error normalization,
 credential validation behavior, and static service identity.
 
+Wave 2 adds token lifecycle suite:
+
+1. `tests/wave2-token-lifecycle.test.cjs`
+
+This suite covers refresh toggle persistence, token cache key + TTL semantics,
+token extraction/caching, and cache-first token fetch behavior.
+
 ## Port Plan
 
 Structured function-by-function port plan for MangaUpdates wrapper migration:

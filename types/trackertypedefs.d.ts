@@ -23,6 +23,15 @@ export interface TrackerHttpClientLike {
   ) => Promise<{ data?: unknown }>;
 }
 
+export interface TrackerCacheAdapterLike {
+  getValue(key: string): Promise<string | null>;
+  setValue(key: string, value: string, ttlSeconds?: number): Promise<void>;
+}
+
+export interface MangaUpdatesTokenResponse {
+  session_token: string;
+}
+
 export interface MangaUpdatesSettingsDocument {
   metadata: Record<string, unknown>;
   schema: Record<string, unknown>;
@@ -49,6 +58,7 @@ export interface MangaUpdatesAPIWrapperCtorParams {
   serviceSettings?: TrackerServiceSettings;
   onCredentialsRequired?: CredentialsRequiredCallback;
   httpClient?: TrackerHttpClientLike | null;
+  cacheAdapter?: TrackerCacheAdapterLike | null;
 }
 
 export interface MangaUpdatesAPIWrapperInitOptions {
@@ -58,6 +68,8 @@ export interface MangaUpdatesAPIWrapperInitOptions {
   onCredentialsRequired?: CredentialsRequiredCallback;
   httpClient?: TrackerHttpClientLike | null;
   httpClientFactory?: () => TrackerHttpClientLike;
+  cacheAdapter?: TrackerCacheAdapterLike | null;
+  cacheAdapterFactory?: () => TrackerCacheAdapterLike;
 }
 
 export interface MangaUpdatesRawSearchItem {

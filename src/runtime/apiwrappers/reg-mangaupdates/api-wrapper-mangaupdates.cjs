@@ -12,6 +12,8 @@ const SERVICE_NAME = 'mangaupdates';
 /** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesRawEntityResponse} MangaUpdatesRawEntityResponse */
 /** @typedef {import('../../../../types/trackertypedefs').TrackerHttpClientLike} TrackerHttpClientLike */
 /** @typedef {import('../../../../types/trackertypedefs').TrackerCredentials} TrackerCredentials */
+/** @typedef {import('../../../../types/trackertypedefs').TrackerCacheAdapterLike} TrackerCacheAdapterLike */
+/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesTokenResponse} MangaUpdatesTokenResponse */
 
 /**
  * @param {string} html
@@ -35,6 +37,27 @@ function extractHtmlErrorMessage(html) {
     .trim();
 
   return bodyText ? bodyText.slice(0, 180) : 'Unknown HTML error response';
+}
+
+/**
+ * @param {string|boolean|number|null|undefined} value
+ * @returns {boolean}
+ */
+function parseBoolean(value) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on';
 }
 
 /**
@@ -70,6 +93,44 @@ function createDefaultHttpClient() {
   return createFallbackHttpClient();
 }
 
+/**
+ * @returns {TrackerCacheAdapterLike}
+ */
+function createInMemoryCacheAdapter() {
+  /** @type {Map<string, { value: string, expiresAt: number | null }>} */
+  const cache = new Map();
+
+  return {
+    async getValue(key) {
+      if (!cache.has(key)) {
+        return null;
+      }
+
+      const entry = cache.get(key);
+      if (!entry) {
+        return null;
+      }
+
+      if (typeof entry.expiresAt === 'number' && Date.now() > entry.expiresAt) {
+        cache.delete(key);
+        return null;
+      }
+
+      return entry.value;
+    },
+    async setValue(key, value, ttlSeconds) {
+      const ttl = typeof ttlSeconds === 'number' && Number.isFinite(ttlSeconds) && ttlSeconds > 0
+        ? ttlSeconds
+        : null;
+      const expiresAt = ttl ? Date.now() + (ttl * 1000) : null;
+      cache.set(key, {
+        value,
+        expiresAt,
+      });
+    },
+  };
+}
+
 class MangaUpdatesAPIWrapper {
   /**
    * @param {MangaUpdatesAPIWrapperCtorParams} [params]
@@ -83,6 +144,7 @@ class MangaUpdatesAPIWrapper {
       ? params.onCredentialsRequired
       : null;
     const providedHttpClient = params && typeof params === 'object' ? params.httpClient : null;
+    const providedCacheAdapter = params && typeof params === 'object' ? params.cacheAdapter : null;
 
     this.settings = serviceSettings && typeof serviceSettings === 'object'
       ? serviceSettings
@@ -97,6 +159,9 @@ class MangaUpdatesAPIWrapper {
     this.httpClient = providedHttpClient && typeof providedHttpClient === 'object'
       ? providedHttpClient
       : createDefaultHttpClient();
+    this.cacheAdapter = providedCacheAdapter && typeof providedCacheAdapter === 'object'
+      ? providedCacheAdapter
+      : createInMemoryCacheAdapter();
 
     this._setupAxiosInterceptor();
   }
@@ -190,12 +255,20 @@ class MangaUpdatesAPIWrapper {
       ? options.httpClientFactory
       : null;
     const httpClientFromFactory = !directHttpClient && httpClientFactory ? httpClientFactory() : null;
+    const directCacheAdapter = options && typeof options === 'object' && options.cacheAdapter && typeof options.cacheAdapter === 'object'
+      ? options.cacheAdapter
+      : null;
+    const cacheAdapterFactory = options && typeof options === 'object' && typeof options.cacheAdapterFactory === 'function'
+      ? options.cacheAdapterFactory
+      : null;
+    const cacheAdapterFromFactory = !directCacheAdapter && cacheAdapterFactory ? cacheAdapterFactory() : null;
 
     return new MangaUpdatesAPIWrapper({
       apiSettings,
       serviceSettings,
       onCredentialsRequired,
       httpClient: directHttpClient || httpClientFromFactory || null,
+      cacheAdapter: directCacheAdapter || cacheAdapterFromFactory || null,
     });
   }
 
@@ -217,6 +290,36 @@ class MangaUpdatesAPIWrapper {
     } catch (error) {
       return false;
     }
+  }
+
+  /**
+   * @param {boolean} [value]
+   * @returns {Promise<boolean>}
+   */
+  async refresh(value) {
+    if (!this.cacheAdapter) {
+      return Boolean(value);
+    }
+
+    if (typeof value === 'undefined') {
+      const stored = await this.cacheAdapter.getValue('refresh');
+      return parseBoolean(stored);
+    }
+
+    await this.cacheAdapter.setValue('refresh', String(Boolean(value)));
+    return Boolean(value);
+  }
+
+  /**
+   * @protected
+   * @param {string} [overrideTokenName]
+   * @returns {string}
+   */
+  _getTokenCacheKey(overrideTokenName) {
+    const tokenName = typeof overrideTokenName === 'string' && overrideTokenName
+      ? overrideTokenName
+      : this._defaultTokenName;
+    return `${SERVICE_NAME}_${tokenName}`;
   }
 
   /**
@@ -262,9 +365,20 @@ class MangaUpdatesAPIWrapper {
   /**
    * @param {TrackerCredentials} credentials
    * @param {{ forceRefresh?: boolean }} [options]
-   * @returns {Promise<{ session_token: string }>}
+   * @returns {Promise<MangaUpdatesTokenResponse>}
    */
   async _fetchNewToken(credentials, options = {}) {
+    const forceRefresh = options && typeof options === 'object' && options.forceRefresh === true;
+    const cacheKey = this._getTokenCacheKey();
+    if (!forceRefresh && this.cacheAdapter) {
+      const cachedToken = await this.cacheAdapter.getValue(cacheKey);
+      if (cachedToken) {
+        return {
+          session_token: cachedToken,
+        };
+      }
+    }
+
     const endpoint = this._resolveLoginEndpoint();
     if (!endpoint) {
       throw new Error('(_fetchNewToken) Error: Missing login config');
@@ -292,13 +406,52 @@ class MangaUpdatesAPIWrapper {
       throw new Error('(_fetchNewToken) Error: Missing session token in login response');
     }
 
-    if (options && typeof options === 'object' && options.forceRefresh) {
-      this.bearerToken = sessionToken;
-    }
-
     return {
       session_token: sessionToken,
     };
+  }
+
+  /**
+   * @protected
+   * @param {MangaUpdatesTokenResponse} tokenData
+   * @returns {Promise<string>}
+   */
+  async _extractToken(tokenData) {
+    if (!tokenData || typeof tokenData !== 'object') {
+      return '';
+    }
+
+    return typeof tokenData.session_token === 'string' ? tokenData.session_token : '';
+  }
+
+  /**
+   * @protected
+   * @param {MangaUpdatesTokenResponse} tokenData
+   * @returns {Promise<void>}
+   */
+  async _cacheToken(tokenData) {
+    const token = await this._extractToken(tokenData);
+    if (!token || !this.cacheAdapter) {
+      return;
+    }
+
+    const cacheKey = this._getTokenCacheKey();
+    const ttl = this._getTokenTTL('session_token');
+    await this.cacheAdapter.setValue(cacheKey, token, ttl);
+    this.bearerToken = token;
+  }
+
+  /**
+   * @protected
+   * @param {string} tokenType
+   * @returns {number}
+   */
+  _getTokenTTL(tokenType) {
+    if (tokenType === 'session_token') {
+      return 12 * 60 * 60;
+    }
+
+    return 1 * 60;
   }
 
   /**

@@ -151,6 +151,12 @@ Exit gate:
 Objective:
 - Port token acquisition and caching pipeline.
 
+Status:
+- In progress (started 2026-04-06).
+- Added runtime-safe token/cache adapter seam and token lifecycle methods:
+	`refresh`, `_getTokenCacheKey`, `_extractToken`, `_cacheToken`, `_getTokenTTL`, and cache-aware `_fetchNewToken`.
+- Added dedicated Wave 2 token lifecycle tests.
+
 Functions:
 1. refresh
 2. _fetchNewToken
