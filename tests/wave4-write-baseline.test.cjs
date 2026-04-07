@@ -55,15 +55,21 @@ function createMockCacheAdapter() {
  *    interceptors: { response: { use: (onFulfilled: Function, onRejected: Function) => number } },
  *    put: (url: string, payload?: unknown) => Promise<{ data: unknown, status?: number }>,
  *    get: (url: string) => Promise<{ data: unknown, status?: number }>,
- *    post: (url: string, payload?: unknown, config?: unknown) => Promise<{ data: unknown, status?: number }>
+ *    post: (url: string, payload?: unknown, config?: unknown) => Promise<{ data: unknown, status?: number }>,
+ *    patch: (url: string, payload?: unknown, config?: unknown) => Promise<{ data: unknown, status?: number }>,
+ *    delete: (url: string, config?: unknown) => Promise<{ data: unknown, status?: number }>
  *  },
  *  hooks: {
  *    putCalls: Array<{ url: string, payload: unknown }>,
  *    getCalls: string[],
  *    postCalls: Array<{ url: string, payload: unknown, config: unknown }>,
+ *    patchCalls: Array<{ url: string, payload: unknown, config: unknown }>,
+ *    deleteCalls: Array<{ url: string, config: unknown }>,
  *    putHandler: (url: string, payload: unknown, config: unknown) => unknown,
  *    getHandler: (url: string) => unknown,
- *    postHandler: (url: string, payload: unknown, config: unknown) => unknown
+ *    postHandler: (url: string, payload: unknown, config: unknown) => unknown,
+ *    patchHandler: (url: string, payload: unknown, config: unknown) => unknown,
+ *    deleteHandler: (url: string, config: unknown) => unknown
  *  }
  * }}
  */
@@ -72,6 +78,8 @@ function createMockHttpClient() {
     putCalls: [],
     getCalls: [],
     postCalls: [],
+    patchCalls: [],
+    deleteCalls: [],
     putHandler: () => ({
       data: {
         context: {
@@ -81,6 +89,8 @@ function createMockHttpClient() {
     }),
     getHandler: () => [],
     postHandler: () => ({ status: 200, data: {} }),
+    patchHandler: () => ({ status: 200, data: {} }),
+    deleteHandler: () => ({ status: 200, data: {} }),
   };
 
   const client = {
@@ -91,9 +101,9 @@ function createMockHttpClient() {
         },
       },
     },
-    async put(url, payload) {
+    async put(url, payload, config) {
       hooks.putCalls.push({ url, payload });
-      const out = hooks.putHandler(url, payload);
+      const out = hooks.putHandler(url, payload, config);
       if (out && typeof out === 'object' && 'data' in out) {
         return out;
       }
@@ -110,6 +120,22 @@ function createMockHttpClient() {
     async post(url, payload, config) {
       hooks.postCalls.push({ url, payload, config });
       const out = hooks.postHandler(url, payload, config);
+      if (out && typeof out === 'object' && 'data' in out) {
+        return out;
+      }
+      return { data: out };
+    },
+    async patch(url, payload, config) {
+      hooks.patchCalls.push({ url, payload, config });
+      const out = hooks.patchHandler(url, payload, config);
+      if (out && typeof out === 'object' && 'data' in out) {
+        return out;
+      }
+      return { data: out };
+    },
+    async delete(url, config) {
+      hooks.deleteCalls.push({ url, config });
+      const out = hooks.deleteHandler(url, config);
       if (out && typeof out === 'object' && 'data' in out) {
         return out;
       }
@@ -433,4 +459,103 @@ test('wave4 write flow - setUserProgress updates list and rating and reports upd
   const ratingCall = httpHooks.putCalls.find((call) => String(call.url).includes('/rating'));
   assert.equal(Boolean(ratingCall), true);
   assert.deepEqual(ratingCall.payload, { rating: 9 });
+});
+
+test('wave4 write flow - updateSeries patches series payload and invalidates detail cache', async () => {
+  const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.patchHandler = (url) => {
+    if (url.includes('/series/777')) {
+      return { status: 200, data: { ok: true } };
+    }
+    return { status: 404, data: { reason: 'missing' } };
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
+    },
+    httpClient: client,
+    cacheAdapter,
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const result = await wrapper.updateSeries(777, { description: 'patched' });
+
+  assert.equal(result.status, 200);
+  assert.equal(httpHooks.patchCalls.length, 1);
+  assert.match(String(httpHooks.patchCalls[0].url), /\/series\/777$/);
+  assert.deepEqual(httpHooks.patchCalls[0].payload, { description: 'patched' });
+  assert.equal(cacheHooks.deletedKeys.includes('getSerieDetail%%777'), true);
+});
+
+test('wave4 write flow - updateSeriesCover posts image payload and invalidates detail cache', async () => {
+  const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.postHandler = (url, payload) => {
+    if (url.includes('/series/88/image')) {
+      return {
+        status: 200,
+        data: {
+          ok: true,
+          hasImage: Boolean(payload && typeof payload === 'object' && payload.image),
+        },
+      };
+    }
+
+    return { status: 200, data: {} };
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.seriesImage.template': '${baseUrl}/series/${series_id}/image',
+    },
+    httpClient: client,
+    cacheAdapter,
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const result = await wrapper.updateSeriesCover(88, Buffer.from('image-bytes'));
+
+  assert.equal(result.status, 200);
+  const coverCall = httpHooks.postCalls.find((call) => String(call.url).includes('/series/88/image'));
+  assert.equal(Boolean(coverCall), true);
+  assert.equal(Boolean(coverCall.payload && coverCall.payload.image), true);
+  assert.equal(cacheHooks.deletedKeys.includes('getSerieDetail%%88'), true);
+});
+
+test('wave4 write flow - deleteSeriesCover deletes endpoint and invalidates detail cache', async () => {
+  const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.deleteHandler = (url) => {
+    if (url.includes('/series/91/image')) {
+      return { status: 200, data: { ok: true } };
+    }
+    return { status: 404, data: { reason: 'missing' } };
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.seriesImage.template': '${baseUrl}/series/${series_id}/image',
+    },
+    httpClient: client,
+    cacheAdapter,
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const result = await wrapper.deleteSeriesCover(91);
+
+  assert.equal(result.status, 200);
+  assert.equal(httpHooks.deleteCalls.length, 1);
+  assert.match(String(httpHooks.deleteCalls[0].url), /\/series\/91\/image$/);
+  assert.equal(cacheHooks.deletedKeys.includes('getSerieDetail%%91'), true);
 });

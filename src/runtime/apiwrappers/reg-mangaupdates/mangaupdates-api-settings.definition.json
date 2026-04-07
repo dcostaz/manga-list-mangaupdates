@@ -236,6 +236,26 @@
       "category": "performance",
       "order": 400
     },
+    "api.endpoints.seriesImage.template": {
+      "type": "string",
+      "required": true,
+      "default": "${baseUrl}/series/${series_id}/image",
+      "description": "Endpoint to upload or remove a series cover image",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "network",
+      "order": 285
+    },
+    "api.endpoints.seriesImage.throttle": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Minimum delay between seriesImage requests (milliseconds)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 405
+    },
     "api.endpoints.updateSerieRating.template": {
       "type": "string",
       "required": true,
@@ -863,6 +883,16 @@
       "isBasic": false,
       "category": "performance",
       "order": 720
+    },
+    "rateLimit.perEndpoint.seriesImage": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Delay for seriesImage endpoint (ms)",
+      "readOnly": false,
+      "isBasic": false,
+      "category": "performance",
+      "order": 725
     },
     "rateLimit.perEndpoint.updateSerieRating": {
       "type": "number",

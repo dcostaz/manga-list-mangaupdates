@@ -98,6 +98,12 @@ function createFallbackHttpClient() {
     post: async () => {
       throw new Error('HTTP client is not configured for MangaUpdates runtime wrapper.');
     },
+    patch: async () => {
+      throw new Error('HTTP client is not configured for MangaUpdates runtime wrapper.');
+    },
+    delete: async () => {
+      throw new Error('HTTP client is not configured for MangaUpdates runtime wrapper.');
+    },
   };
 }
 
@@ -1064,6 +1070,202 @@ class MangaUpdatesAPIWrapper {
     }
 
     return null;
+  }
+
+  /**
+   * @param {string|number} id
+   * @param {Record<string, unknown>} payload
+   * @returns {Promise<{ status: number, data: unknown }>}
+   */
+  async updateSeries(id, payload) {
+    let bearerToken = '';
+    try {
+      bearerToken = await this.getToken();
+    } catch (error) {
+      bearerToken = '';
+    }
+
+    if (!bearerToken) {
+      return { status: 401, data: { reason: 'Not authenticated' } };
+    }
+
+    const endpoint = this._resolveEndpoint('api.endpoints.series.template', {
+      series_id: id,
+    });
+    if (!endpoint) {
+      throw new Error('(updateSeries) Missing series config');
+    }
+
+    if (!this.httpClient || typeof this.httpClient.patch !== 'function') {
+      throw new Error('(updateSeries) HTTP client patch method is not configured');
+    }
+
+    try {
+      const response = await this.httpClient.patch(
+        endpoint,
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${bearerToken}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      const responseData = response && typeof response === 'object' ? response.data : null;
+      if (responseData && typeof responseData === 'object' && responseData.status === 'EXCEPTION') {
+        return { status: 400, data: responseData };
+      }
+
+      if (this.cacheAdapter && typeof this.cacheAdapter.deleteValue === 'function') {
+        await this.cacheAdapter.deleteValue(`getSerieDetail%%${Number(id)}`);
+      }
+
+      return {
+        status: response && typeof response === 'object' && typeof response.status === 'number' ? response.status : 200,
+        data: responseData,
+      };
+    } catch (error) {
+      if (error && typeof error === 'object' && error.response && typeof error.response === 'object') {
+        const status = typeof error.response.status === 'number' ? error.response.status : 500;
+        const data = 'data' in error.response ? error.response.data : null;
+        return { status, data };
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * @param {string|number} id
+   * @param {Buffer | Uint8Array | ArrayBuffer | string | null | undefined} imageBuffer
+   * @returns {Promise<{ status: number, data: unknown }>}
+   */
+  async updateSeriesCover(id, imageBuffer) {
+    let bearerToken = '';
+    try {
+      bearerToken = await this.getToken();
+    } catch (error) {
+      bearerToken = '';
+    }
+
+    if (!bearerToken) {
+      return { status: 401, data: { reason: 'Not authenticated' } };
+    }
+
+    if (!imageBuffer) {
+      return { status: 400, data: { reason: 'imageBuffer is required' } };
+    }
+
+    const endpoint = this._resolveEndpoint('api.endpoints.seriesImage.template', {
+      series_id: id,
+    });
+    if (!endpoint) {
+      throw new Error('(updateSeriesCover) Missing seriesImage config');
+    }
+
+    if (!this.httpClient || typeof this.httpClient.post !== 'function') {
+      throw new Error('(updateSeriesCover) HTTP client post method is not configured');
+    }
+
+    try {
+      const response = await this.httpClient.post(
+        endpoint,
+        {
+          image: imageBuffer,
+          filename: 'cover.jpg',
+          contentType: 'image/jpeg',
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${bearerToken}`,
+          },
+        },
+      );
+
+      const responseData = response && typeof response === 'object' ? response.data : null;
+      if (responseData && typeof responseData === 'object' && responseData.status === 'EXCEPTION') {
+        return { status: 400, data: responseData };
+      }
+
+      if (this.cacheAdapter && typeof this.cacheAdapter.deleteValue === 'function') {
+        await this.cacheAdapter.deleteValue(`getSerieDetail%%${Number(id)}`);
+      }
+
+      return {
+        status: response && typeof response === 'object' && typeof response.status === 'number' ? response.status : 200,
+        data: responseData,
+      };
+    } catch (error) {
+      if (error && typeof error === 'object' && error.response && typeof error.response === 'object') {
+        const status = typeof error.response.status === 'number' ? error.response.status : 500;
+        const data = 'data' in error.response ? error.response.data : null;
+        return { status, data };
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * @param {string|number} id
+   * @returns {Promise<{ status: number, data: unknown }>}
+   */
+  async deleteSeriesCover(id) {
+    let bearerToken = '';
+    try {
+      bearerToken = await this.getToken();
+    } catch (error) {
+      bearerToken = '';
+    }
+
+    if (!bearerToken) {
+      return { status: 401, data: { reason: 'Not authenticated' } };
+    }
+
+    const endpoint = this._resolveEndpoint('api.endpoints.seriesImage.template', {
+      series_id: id,
+    });
+    if (!endpoint) {
+      throw new Error('(deleteSeriesCover) Missing seriesImage config');
+    }
+
+    if (!this.httpClient || typeof this.httpClient.delete !== 'function') {
+      throw new Error('(deleteSeriesCover) HTTP client delete method is not configured');
+    }
+
+    try {
+      const response = await this.httpClient.delete(
+        endpoint,
+        {
+          headers: {
+            Authorization: `Bearer ${bearerToken}`,
+          },
+        },
+      );
+
+      const responseData = response && typeof response === 'object' ? response.data : null;
+      if (responseData && typeof responseData === 'object' && responseData.status === 'EXCEPTION') {
+        return { status: 400, data: responseData };
+      }
+
+      if (this.cacheAdapter && typeof this.cacheAdapter.deleteValue === 'function') {
+        await this.cacheAdapter.deleteValue(`getSerieDetail%%${Number(id)}`);
+      }
+
+      return {
+        status: response && typeof response === 'object' && typeof response.status === 'number' ? response.status : 200,
+        data: responseData,
+      };
+    } catch (error) {
+      if (error && typeof error === 'object' && error.response && typeof error.response === 'object') {
+        const status = typeof error.response.status === 'number' ? error.response.status : 500;
+        const data = 'data' in error.response ? error.response.data : null;
+        return { status, data };
+      }
+
+      throw error;
+    }
   }
 
   /**

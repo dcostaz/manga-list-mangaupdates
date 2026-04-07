@@ -49,6 +49,15 @@ export interface TrackerHttpClientLike {
     data?: unknown,
     config?: Record<string, unknown>
   ) => Promise<{ data?: unknown }>;
+  patch?: (
+    url: string,
+    data?: unknown,
+    config?: Record<string, unknown>
+  ) => Promise<{ data?: unknown }>;
+  delete?: (
+    url: string,
+    config?: Record<string, unknown>
+  ) => Promise<{ data?: unknown }>;
 }
 
 export interface TrackerCacheAdapterLike {

@@ -95,8 +95,9 @@ Wave 4 baseline adds write-path mutation suite:
 1. `tests/wave4-write-baseline.test.cjs`
 
 This suite covers authentication fallback, update payload transformation,
-list resolution for status updates, rating updates, progress push behavior,
-and wrapped mutation error semantics.
+list resolution for status updates, series metadata mutation, series cover
+mutation, rating updates, progress push behavior, and wrapped mutation
+error semantics.
 
 ## Port Plan
 
