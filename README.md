@@ -1,5 +1,9 @@
 # manga-list-mangaupdates
 
+[![tests](https://github.com/dcostaz/manga-list-mangaupdates/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/dcostaz/manga-list-mangaupdates/actions/workflows/tests.yml)
+[![release-runtime-zip](https://github.com/dcostaz/manga-list-mangaupdates/actions/workflows/release-runtime-zip.yml/badge.svg?branch=main)](https://github.com/dcostaz/manga-list-mangaupdates/actions/workflows/release-runtime-zip.yml)
+[![download-runtime-zip](https://img.shields.io/badge/download-runtime_zip-0969da?logo=github)](https://github.com/dcostaz/manga-list-mangaupdates/releases/download/runtime-latest/manga-list-mangaupdates-runtime.zip)
+
 Runtime tracker package source for MangaUpdates.
 
 This repository builds a runtime-installable zip artifact compatible with manga-list `TrackerPackageLoader`.
