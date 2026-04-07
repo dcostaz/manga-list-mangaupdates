@@ -67,6 +67,13 @@ Wave 0 adds dedicated contract harness suites:
 Note: The baseline matrix suite validates MangaUpdates locally and validates MangaDex when
 `../manga-list-mangadex` exists in the same parent directory layout.
 
+Wave 1 adds runtime init and infrastructure behavior suite:
+
+1. `tests/wave1-runtime-init.test.cjs`
+
+This suite covers init-path settings resolution, interceptor error normalization,
+credential validation behavior, and static service identity.
+
 ## Port Plan
 
 Structured function-by-function port plan for MangaUpdates wrapper migration:

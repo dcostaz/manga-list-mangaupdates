@@ -1,4 +1,27 @@
 export type TrackerServiceSettings = Record<string, unknown>;
+export type TrackerCredentials = Record<string, string>;
+
+export type CredentialsRequiredCallback = (
+  details?: Record<string, unknown>
+) => void | Promise<void>;
+
+export interface TrackerHttpResponseInterceptorLike {
+  use(
+    onFulfilled: (response: unknown) => unknown,
+    onRejected: (error: unknown) => Promise<never>
+  ): unknown;
+}
+
+export interface TrackerHttpClientLike {
+  interceptors?: {
+    response?: TrackerHttpResponseInterceptorLike;
+  };
+  put?: (
+    url: string,
+    data?: unknown,
+    config?: Record<string, unknown>
+  ) => Promise<{ data?: unknown }>;
+}
 
 export interface MangaUpdatesSettingsDocument {
   metadata: Record<string, unknown>;
@@ -24,11 +47,17 @@ export interface MangaUpdatesAPISettingsLike {
 export interface MangaUpdatesAPIWrapperCtorParams {
   apiSettings?: MangaUpdatesAPISettingsLike | null;
   serviceSettings?: TrackerServiceSettings;
+  onCredentialsRequired?: CredentialsRequiredCallback;
+  httpClient?: TrackerHttpClientLike | null;
 }
 
 export interface MangaUpdatesAPIWrapperInitOptions {
   apiSettings?: MangaUpdatesAPISettingsLike | null;
   serviceSettings?: TrackerServiceSettings;
+  settingsPath?: string;
+  onCredentialsRequired?: CredentialsRequiredCallback;
+  httpClient?: TrackerHttpClientLike | null;
+  httpClientFactory?: () => TrackerHttpClientLike;
 }
 
 export interface MangaUpdatesRawSearchItem {

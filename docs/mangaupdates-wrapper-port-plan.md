@@ -128,6 +128,11 @@ Exit gate:
 Objective:
 - Port setup and init behavior without host-only dependencies.
 
+Status:
+- In progress (started 2026-04-06).
+- Runtime wrapper now has instance HTTP client + interceptor wiring, settings path init fallback,
+	serviceName getter, and baseline credential test path.
+
 Functions:
 1. constructor
 2. _setupAxiosInterceptor
