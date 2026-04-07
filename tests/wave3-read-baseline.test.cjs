@@ -285,3 +285,121 @@ test('wave3 read flow - getSeriesUrl returns payload url when provided by series
   const url = await wrapper.getSeriesUrl(1);
   assert.equal(url, 'https://www.mangaupdates.com/series/example');
 });
+
+test('wave3 series detail - getSerieDetail reads endpoint and then cache', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.getHandler = (url) => {
+    if (url.includes('/series/42')) {
+      return {
+        series_id: 42,
+        title: 'Blue Lock',
+      };
+    }
+    return [];
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
+      'cache.ttl.seriesMetadata': 10,
+    },
+    httpClient: client,
+    cacheAdapter,
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const first = await wrapper.getSerieDetail(42);
+  assert.equal(first.title, 'Blue Lock');
+  assert.equal(httpHooks.getCalls.length, 1);
+
+  const second = await wrapper.getSerieDetail(42);
+  assert.equal(second.title, 'Blue Lock');
+  assert.equal(httpHooks.getCalls.length, 1);
+});
+
+test('wave3 series detail - getSeriesById returns normalized match payload', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.getHandler = (url) => {
+    if (url.includes('/series/7')) {
+      return {
+        series_id: 7,
+        title: 'Dandadan',
+        associated: [{ title: 'Dan Da Dan' }],
+        image: {
+          url: {
+            original: 'https://img.example/dandadan.jpg',
+          },
+        },
+        year: 2021,
+        type: 'Manga',
+        genres: [{ genre: 'Action' }, { genre: 'Comedy' }],
+        description: 'Aliens and spirits collide.',
+        status: 'Ongoing',
+        authors: [{ name: 'Yukinobu Tatsu' }],
+        publishers: [{ publisher_name: 'Shueisha' }],
+      };
+    }
+    return [];
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
+    },
+    httpClient: client,
+    cacheAdapter,
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const detail = await wrapper.getSeriesById(7);
+  assert.equal(detail.source, 'mangaupdates');
+  assert.equal(detail.trackerId, 7);
+  assert.equal(detail.title, 'Dandadan');
+  assert.deepEqual(detail.alternativeTitles, ['Dan Da Dan']);
+  assert.equal(detail.coverUrl, 'https://img.example/dandadan.jpg');
+  assert.equal(detail.metadata.type, 'Manga');
+  assert.deepEqual(detail.metadata.genres, ['Action', 'Comedy']);
+  assert.equal(detail.matchType, 'exact');
+});
+
+test('wave3 series detail - getSeriesByIdRaw returns transport payload from detailed response', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.getHandler = (url) => {
+    if (url.includes('/series/88')) {
+      return {
+        series_id: 88,
+        title: 'Kaiju No. 8',
+        url: 'https://www.mangaupdates.com/series/kaiju-no-8',
+      };
+    }
+    return [];
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
+    },
+    httpClient: client,
+    cacheAdapter,
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const raw = await wrapper.getSeriesByIdRaw(88);
+  assert.equal(raw.operation, 'getSeriesByIdRaw');
+  assert.equal(raw.payload.id, 88);
+  assert.equal(raw.payload.title, 'Kaiju No. 8');
+  assert.equal(raw.payload.url, 'https://www.mangaupdates.com/series/kaiju-no-8');
+  assert.equal(raw.payload.series.series_id, 88);
+});

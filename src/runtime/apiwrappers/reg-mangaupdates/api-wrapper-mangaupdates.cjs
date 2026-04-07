@@ -783,6 +783,162 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * @param {number} [id]
+   * @param {{ useCache?: boolean }} [options]
+   * @returns {Promise<Record<string, unknown> | null>}
+   */
+  async getSerieDetail(id = 0, options = {}) {
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId) || numericId <= 0) {
+      return null;
+    }
+
+    const useCache = !(options && typeof options === 'object' && options.useCache === false);
+    if (!useCache) {
+      await this.refresh(true);
+    }
+
+    const refreshRequired = await this.refresh();
+    const cacheKey = `getSerieDetail%%${numericId}`;
+    if (!refreshRequired && this.cacheAdapter) {
+      const cached = await this.cacheAdapter.getValue(cacheKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (parsed && typeof parsed === 'object') {
+            return parsed;
+          }
+        } catch (error) {
+          // Ignore cache parse errors and continue to live request.
+        }
+      }
+    }
+
+    const endpoint = this._resolveEndpoint('api.endpoints.series.template', {
+      series_id: numericId,
+    });
+    if (!endpoint) {
+      throw new Error('(getSerieDetail) Missing series config');
+    }
+
+    const bearerToken = await this.getToken();
+    if (!bearerToken) {
+      return null;
+    }
+
+    if (!this.httpClient || typeof this.httpClient.get !== 'function') {
+      throw new Error('(getSerieDetail) HTTP client get method is not configured');
+    }
+
+    try {
+      const response = await this.httpClient.get(endpoint, {
+        headers: {
+          Authorization: `Bearer ${bearerToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const payload = response && typeof response === 'object' && response.data && typeof response.data === 'object'
+        ? response.data
+        : null;
+      if (payload && this.cacheAdapter) {
+        const ttlCandidate = this._resolveSettingValue('cache.ttl.seriesMetadata');
+        const ttl = typeof ttlCandidate === 'number' && Number.isFinite(ttlCandidate) && ttlCandidate > 0
+          ? ttlCandidate
+          : 24 * 60 * 60;
+        await this.cacheAdapter.setValue(cacheKey, JSON.stringify(payload), ttl);
+      }
+
+      if (refreshRequired) {
+        await this.refresh(false);
+      }
+
+      return payload;
+    } catch (error) {
+      const status = error && typeof error === 'object' && error.response && typeof error.response === 'object'
+        ? error.response.status
+        : error && typeof error === 'object' && 'statusCode' in error
+          ? error.statusCode
+          : null;
+      if (status === 404) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * @private
+   * @param {Record<string, unknown>} seriesDetail
+   * @returns {Record<string, unknown>}
+   */
+  _normalizeSeriesData(seriesDetail) {
+    const associated = Array.isArray(seriesDetail.associated) ? seriesDetail.associated : [];
+    const genres = Array.isArray(seriesDetail.genres) ? seriesDetail.genres : [];
+    const authors = Array.isArray(seriesDetail.authors) ? seriesDetail.authors : [];
+    const publishers = Array.isArray(seriesDetail.publishers) ? seriesDetail.publishers : [];
+
+    const image = seriesDetail.image && typeof seriesDetail.image === 'object' ? seriesDetail.image : null;
+    const imageUrl = image && image.url && typeof image.url === 'object' ? image.url : null;
+
+    const trackerId = typeof seriesDetail.series_id === 'number' || typeof seriesDetail.series_id === 'string'
+      ? seriesDetail.series_id
+      : typeof seriesDetail.id === 'number' || typeof seriesDetail.id === 'string'
+        ? seriesDetail.id
+        : null;
+
+    return {
+      source: SERVICE_NAME,
+      trackerId,
+      title: typeof seriesDetail.title === 'string' ? seriesDetail.title : '',
+      alternativeTitles: associated
+        .map((entry) => (entry && typeof entry === 'object' && typeof entry.title === 'string' ? entry.title : null))
+        .filter((entry) => entry !== null),
+      coverUrl: imageUrl && typeof imageUrl.original === 'string'
+        ? imageUrl.original
+        : imageUrl && typeof imageUrl.thumb === 'string'
+          ? imageUrl.thumb
+          : null,
+      metadata: {
+        year: typeof seriesDetail.year === 'number' ? seriesDetail.year : Number(seriesDetail.year) || null,
+        type: typeof seriesDetail.type === 'string' ? seriesDetail.type : null,
+        genres: genres
+          .map((entry) => (entry && typeof entry === 'object' && typeof entry.genre === 'string' ? entry.genre : null))
+          .filter((entry) => entry !== null),
+        description: typeof seriesDetail.description === 'string' ? seriesDetail.description : null,
+        status: typeof seriesDetail.status === 'string' ? seriesDetail.status : null,
+        authors: authors
+          .map((entry) => (entry && typeof entry === 'object' && typeof entry.name === 'string' ? entry.name : null))
+          .filter((entry) => entry !== null),
+        publishers: publishers
+          .map((entry) => (entry && typeof entry === 'object' && typeof entry.publisher_name === 'string' ? entry.publisher_name : null))
+          .filter((entry) => entry !== null),
+      },
+      confidence: 100,
+      matchType: 'exact',
+    };
+  }
+
+  /**
+   * @param {string|number} trackerId
+   * @param {boolean} [useCache]
+   * @returns {Promise<Record<string, unknown> | null>}
+   */
+  async getSeriesById(trackerId, useCache = true) {
+    try {
+      const seriesDetail = await this.getSerieDetail(Number(trackerId), { useCache });
+      if (!seriesDetail || typeof seriesDetail !== 'object') {
+        return null;
+      }
+
+      return this._normalizeSeriesData(seriesDetail);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
    * @param {string} query
    * @returns {Promise<MangaUpdatesRawSearchResponse>}
    */
@@ -800,11 +956,39 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
-   * @param {string} trackerId
-    * @returns {Promise<MangaUpdatesRawEntityResponse>}
+   * @param {string|number} trackerId
+   * @param {boolean} [useCache]
+   * @returns {Promise<MangaUpdatesRawEntityResponse>}
    */
-  async getSeriesByIdRaw(trackerId) {
-    const normalizedTrackerId = typeof trackerId === 'string' ? trackerId.trim() : '';
+  async getSeriesByIdRaw(trackerId, useCache = true) {
+    const normalizedTrackerId = typeof trackerId === 'string' ? trackerId.trim() : String(trackerId || '').trim();
+
+    try {
+      const seriesDetail = await this.getSerieDetail(Number(trackerId), { useCache });
+      if (seriesDetail && typeof seriesDetail === 'object') {
+        const id = typeof seriesDetail.series_id === 'number' || typeof seriesDetail.series_id === 'string'
+          ? seriesDetail.series_id
+          : normalizedTrackerId || 'unknown';
+        const title = typeof seriesDetail.title === 'string' && seriesDetail.title.trim()
+          ? seriesDetail.title
+          : normalizedTrackerId || 'Unknown MangaUpdates Title';
+        const url = typeof seriesDetail.url === 'string' ? seriesDetail.url : null;
+
+        return {
+          trackerId: 'mangaupdates',
+          operation: 'getSeriesByIdRaw',
+          payload: {
+            id,
+            title,
+            url,
+            series: seriesDetail,
+          },
+        };
+      }
+    } catch (error) {
+      // Fallback placeholder preserves baseline contract behavior when series detail lookup is unavailable.
+    }
+
     return {
       trackerId: 'mangaupdates',
       operation: 'getSeriesByIdRaw',
