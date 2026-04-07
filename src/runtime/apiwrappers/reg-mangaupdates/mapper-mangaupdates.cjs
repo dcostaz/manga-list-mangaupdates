@@ -3,6 +3,11 @@
 const path = require('path');
 const { TRACKER_DTO_CONTRACT_VERSION } = require(path.join(__dirname, '..', 'trackerdtocontract.cjs'));
 
+/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesRawSearchResponse} MangaUpdatesRawSearchResponse */
+/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesRawEntityResponse} MangaUpdatesRawEntityResponse */
+/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesSeriesDetailDto} MangaUpdatesSeriesDetailDto */
+/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesStatusDto} MangaUpdatesStatusDto */
+
 class MangaUpdatesTrackerMapper {
   /**
    * @param {Record<string, unknown> | null} [initContext]
@@ -14,7 +19,7 @@ class MangaUpdatesTrackerMapper {
   }
 
   /**
-   * @param {{ payload?: { data?: Array<Record<string, unknown>> } } | null} raw
+    * @param {MangaUpdatesRawSearchResponse | null} raw
    * @returns {Array<Record<string, unknown>>}
    */
   toSearchResultDtos(raw) {
@@ -44,8 +49,8 @@ class MangaUpdatesTrackerMapper {
   }
 
   /**
-   * @param {{ payload?: Record<string, unknown> } | null} raw
-   * @returns {Record<string, unknown> | null}
+    * @param {MangaUpdatesRawEntityResponse | null} raw
+    * @returns {MangaUpdatesSeriesDetailDto | null}
    */
   toSeriesDetailDto(raw) {
     const payload = raw && typeof raw === 'object' ? raw.payload : null;
@@ -73,8 +78,8 @@ class MangaUpdatesTrackerMapper {
   }
 
   /**
-   * @param {{ payload?: Record<string, unknown> } | null} raw
-   * @returns {Record<string, unknown> | null}
+    * @param {MangaUpdatesRawEntityResponse | null} raw
+    * @returns {MangaUpdatesStatusDto | null}
    */
   toStatusDto(raw) {
     const payload = raw && typeof raw === 'object' ? raw.payload : null;

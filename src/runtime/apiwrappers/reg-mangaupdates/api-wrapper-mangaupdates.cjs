@@ -3,11 +3,17 @@
 const path = require('path');
 const MangaUpdatesAPISettings = require(path.join(__dirname, 'api-settings-mangaupdates.cjs'));
 
+/** @typedef {import('../../../../types/trackertypedefs').TrackerServiceSettings} TrackerServiceSettings */
+/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesAPIWrapperCtorParams} MangaUpdatesAPIWrapperCtorParams */
+/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesAPIWrapperInitOptions} MangaUpdatesAPIWrapperInitOptions */
+/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesRawSearchResponse} MangaUpdatesRawSearchResponse */
+/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesRawEntityResponse} MangaUpdatesRawEntityResponse */
+
 class MangaUpdatesAPIWrapper {
   /**
-   * @param {object} [params]
+  * @param {MangaUpdatesAPIWrapperCtorParams} [params]
    * @param {MangaUpdatesAPISettings | null} [params.apiSettings]
-   * @param {Record<string, unknown>} [params.serviceSettings]
+  * @param {TrackerServiceSettings} [params.serviceSettings]
    */
   constructor(params = {}) {
     const apiSettings = params && typeof params === 'object' ? params.apiSettings : null;
@@ -18,9 +24,9 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
-   * @param {object} [options]
+    * @param {MangaUpdatesAPIWrapperInitOptions} [options]
    * @param {MangaUpdatesAPISettings | null} [options.apiSettings]
-   * @param {Record<string, unknown>} [options.serviceSettings]
+    * @param {TrackerServiceSettings} [options.serviceSettings]
    * @returns {Promise<MangaUpdatesAPIWrapper>}
    */
   static async init(options = {}) {
@@ -36,7 +42,7 @@ class MangaUpdatesAPIWrapper {
 
   /**
    * @param {string} query
-   * @returns {Promise<{ trackerId: string, operation: string, payload: { data: Array<Record<string, unknown>> } }>}
+    * @returns {Promise<MangaUpdatesRawSearchResponse>}
    */
   async searchTrackersRaw(query) {
     const normalizedQuery = typeof query === 'string' ? query.trim() : '';
@@ -53,7 +59,7 @@ class MangaUpdatesAPIWrapper {
 
   /**
    * @param {string} trackerId
-   * @returns {Promise<{ trackerId: string, operation: string, payload: Record<string, unknown> }>}
+    * @returns {Promise<MangaUpdatesRawEntityResponse>}
    */
   async getSeriesByIdRaw(trackerId) {
     const normalizedTrackerId = typeof trackerId === 'string' ? trackerId.trim() : '';
@@ -69,7 +75,7 @@ class MangaUpdatesAPIWrapper {
 
   /**
    * @param {string} trackerId
-   * @returns {Promise<{ trackerId: string, operation: string, payload: Record<string, unknown> }>}
+    * @returns {Promise<MangaUpdatesRawEntityResponse>}
    */
   async getUserProgressRaw(trackerId) {
     const normalizedTrackerId = typeof trackerId === 'string' ? trackerId.trim() : '';

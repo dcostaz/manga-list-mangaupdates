@@ -2,10 +2,15 @@
 
 const fs = require('fs').promises;
 
+/** @typedef {import('../../../../types/trackertypedefs').TrackerServiceSettings} TrackerServiceSettings */
+/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesSettingsDocument} MangaUpdatesSettingsDocument */
+/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesAPISettingsConstructorParams} MangaUpdatesAPISettingsConstructorParams */
+/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesAPISettingsInitOptions} MangaUpdatesAPISettingsInitOptions */
+
 class MangaUpdatesAPISettings {
   /**
-   * @param {object} [params]
-   * @param {Record<string, unknown>} [params.settings]
+  * @param {MangaUpdatesAPISettingsConstructorParams} [params]
+  * @param {TrackerServiceSettings | MangaUpdatesSettingsDocument} [params.settings]
    * @param {string} [params.settingsPath]
    */
   constructor(params = {}) {
@@ -21,9 +26,9 @@ class MangaUpdatesAPISettings {
   }
 
   /**
-   * @param {object} [options]
+    * @param {MangaUpdatesAPISettingsInitOptions} [options]
    * @param {string} [options.settingsPath]
-   * @param {Record<string, unknown>} [options.defaultSettings]
+    * @param {TrackerServiceSettings} [options.defaultSettings]
    * @returns {Promise<MangaUpdatesAPISettings>}
    */
   static async init(options = {}) {

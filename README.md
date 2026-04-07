@@ -45,8 +45,20 @@ Contract version governance:
 	use `metadata.settingsContractVersion` matching `TRACKER_SETTINGS_CONTRACT_VERSION`.
 4. Build fails fast on mismatch to prevent contract drift.
 
+Type definitions governance:
+
+1. Tracker-local typedefs live in `types/trackertypedefs.d.ts`.
+2. Runtime classes explicitly reference these typedefs using JSDoc `import(...)` types.
+3. The repository does not rely on manga-list type definition files for runtime wrapper, mapper, settings, or tracker-module contracts.
+
 ## Test
 
 ```bash
 npm test
 ```
+
+## Port Plan
+
+Structured function-by-function port plan for MangaUpdates wrapper migration:
+
+1. d:/manga-list-mangaupdates/docs/mangaupdates-wrapper-port-plan.md
