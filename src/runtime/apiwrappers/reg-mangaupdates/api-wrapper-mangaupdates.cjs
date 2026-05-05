@@ -1880,7 +1880,39 @@ class MangaUpdatesAPIWrapper {
           ? prioritized.map((entry) => entry.result)
           : searchResults.slice(0, 5);
 
-        const items = rows.map((result) => {
+        const hydratedRows = await Promise.all(rows.map(async (result) => {
+          if (!result || typeof result !== 'object') {
+            return result;
+          }
+
+          const row = result.record && typeof result.record === 'object'
+            ? result.record
+            : null;
+          const seriesId = row && (typeof row.series_id === 'number' || typeof row.series_id === 'string')
+            ? Number(row.series_id)
+            : NaN;
+
+          if (!Number.isFinite(seriesId) || seriesId <= 0) {
+            return result;
+          }
+
+          try {
+            const detail = await this.getSerieDetail(seriesId, { useCache });
+            if (!detail || typeof detail !== 'object') {
+              return result;
+            }
+
+            return {
+              ...result,
+              record: detail,
+            };
+          } catch {
+            // Preserve ranked search result when detail hydration fails.
+            return result;
+          }
+        }));
+
+        const items = hydratedRows.map((result) => {
           const row = result && typeof result === 'object' && result.record && typeof result.record === 'object'
             ? result.record
             : null;
