@@ -1893,6 +1893,14 @@ class MangaUpdatesAPIWrapper {
               ? result.hit_title.trim()
               : title;
 
+          if (result && typeof result === 'object') {
+            return {
+              ...result,
+              id: itemId,
+              title: itemTitle,
+            };
+          }
+
           return {
             id: itemId,
             title: itemTitle,

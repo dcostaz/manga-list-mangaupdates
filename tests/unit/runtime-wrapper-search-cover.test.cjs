@@ -291,10 +291,9 @@ test('wave5 search flow - searchTrackersRaw maps transport rows from live search
   assert.equal(raw.operation, 'searchTrackersRaw');
   assert.equal(Array.isArray(raw.payload.data), true);
   assert.equal(raw.payload.data.length, 1);
-  assert.deepEqual(raw.payload.data[0], {
-    id: '654',
-    title: 'The Beginning After the End',
-  });
+  assert.equal(raw.payload.data[0]?.id, '654');
+  assert.equal(raw.payload.data[0]?.title, 'The Beginning After the End');
+  assert.equal(typeof raw.payload.data[0]?.record, 'object');
 });
 
 test('wave5 search flow - searchTrackersRaw prioritizes exact over fuzzy rows', async () => {
@@ -343,10 +342,9 @@ test('wave5 search flow - searchTrackersRaw prioritizes exact over fuzzy rows', 
   const raw = await wrapper.searchTrackersRaw({ title: 'Solo Leveling' }, { useCache: false });
 
   assert.equal(raw.payload.data.length >= 2, true);
-  assert.deepEqual(raw.payload.data[0], {
-    id: '901',
-    title: 'Solo Leveling',
-  });
+  assert.equal(raw.payload.data[0]?.id, '901');
+  assert.equal(raw.payload.data[0]?.title, 'Solo Leveling');
+  assert.equal(typeof raw.payload.data[0]?.record, 'object');
 });
 
 test('wave5 cover flow - searchCovers resolves cover from tracker id detail', async () => {
