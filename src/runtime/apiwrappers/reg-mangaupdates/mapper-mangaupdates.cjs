@@ -52,9 +52,7 @@ class MangaUpdatesTrackerMapper {
         const associated = record && Array.isArray(record.associated)
           ? record.associated
           : [];
-        const alternativeTitles = associated
-          .map((entry) => (entry && typeof entry === 'object' && typeof entry.title === 'string' ? entry.title : null))
-          .filter((entry) => entry !== null);
+        const alternativeTitles = this._normalizeAlternativeTitles(associated);
 
         const image = record && record.image && typeof record.image === 'object'
           ? record.image
@@ -127,9 +125,7 @@ class MangaUpdatesTrackerMapper {
     const associated = series && Array.isArray(series.associated)
       ? series.associated
       : [];
-    const alternativeTitles = associated
-      .map((entry) => (entry && typeof entry === 'object' && typeof entry.title === 'string' ? entry.title : null))
-      .filter((entry) => entry !== null);
+    const alternativeTitles = this._normalizeAlternativeTitles(associated);
 
     const payloadYear = typeof payload.year === 'number'
       ? payload.year
@@ -197,6 +193,58 @@ class MangaUpdatesTrackerMapper {
    */
   toCoverMetadataDtos(_raw) {
     return [];
+  }
+
+  /**
+   * @param {unknown[]} associated
+   * @returns {string[]}
+   */
+  _normalizeAlternativeTitles(associated) {
+    /** @type {string[]} */
+    const values = [];
+    this._collectStringValues(associated, values, new Set());
+    return Array.from(new Set(values));
+  }
+
+  /**
+   * @param {unknown} value
+   * @param {string[]} bucket
+   * @param {Set<object>} visited
+   * @returns {void}
+   */
+  _collectStringValues(value, bucket, visited) {
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      if (normalized) {
+        bucket.push(normalized);
+      }
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((entry) => this._collectStringValues(entry, bucket, visited));
+      return;
+    }
+
+    if (!value || typeof value !== 'object') {
+      return;
+    }
+
+    const record = /** @type {Record<string, unknown>} */ (value);
+    if (visited.has(record)) {
+      return;
+    }
+    visited.add(record);
+
+    if (typeof record.title === 'string') {
+      const normalizedTitle = record.title.trim();
+      if (normalizedTitle) {
+        bucket.push(normalizedTitle);
+      }
+      return;
+    }
+
+    Object.values(record).forEach((entry) => this._collectStringValues(entry, bucket, visited));
   }
 }
 
