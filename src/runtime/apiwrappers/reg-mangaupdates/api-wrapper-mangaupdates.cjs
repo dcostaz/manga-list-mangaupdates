@@ -2503,18 +2503,60 @@ class MangaUpdatesAPIWrapper {
     }
 
     const image = payload.image && typeof payload.image === 'object' ? payload.image : null;
+    const imageAsString = typeof payload.image === 'string' ? payload.image : null;
     const url = image && image.url && typeof image.url === 'object' ? image.url : null;
+    const urlAsString = image && typeof image.url === 'string' ? image.url : null;
 
-    if (url && typeof url.original === 'string' && url.original.trim()) {
-      return url.original;
-    }
+    const normalizeCoverUrl = (candidate) => {
+      if (typeof candidate !== 'string') {
+        return null;
+      }
 
-    if (url && typeof url.thumb === 'string' && url.thumb.trim()) {
-      return url.thumb;
-    }
+      const trimmed = candidate.trim();
+      if (!trimmed) {
+        return null;
+      }
 
-    if (typeof payload.coverUrl === 'string' && payload.coverUrl.trim()) {
-      return payload.coverUrl;
+      if (/^https?:\/\//i.test(trimmed)) {
+        return trimmed;
+      }
+
+      if (trimmed.startsWith('/image/')) {
+        return `https://cdn.mangaupdates.com${trimmed}`;
+      }
+
+      if (trimmed.startsWith('image/')) {
+        return `https://cdn.mangaupdates.com/${trimmed}`;
+      }
+
+      if (/^i\d+\.(jpg|jpeg|png|webp)$/i.test(trimmed)) {
+        return `https://cdn.mangaupdates.com/image/${trimmed}`;
+      }
+
+      return null;
+    };
+
+    const candidates = [
+      url ? url.original : null,
+      url ? url.thumb : null,
+      url ? url.small : null,
+      url ? url.medium : null,
+      url ? url.large : null,
+      urlAsString,
+      image && typeof image.original === 'string' ? image.original : null,
+      image && typeof image.thumb === 'string' ? image.thumb : null,
+      image && typeof image.small === 'string' ? image.small : null,
+      image && typeof image.medium === 'string' ? image.medium : null,
+      image && typeof image.large === 'string' ? image.large : null,
+      imageAsString,
+      typeof payload.coverUrl === 'string' ? payload.coverUrl : null,
+    ];
+
+    for (const candidate of candidates) {
+      const normalized = normalizeCoverUrl(candidate);
+      if (normalized) {
+        return normalized;
+      }
     }
 
     return null;
