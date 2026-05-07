@@ -137,8 +137,23 @@ export interface MangaUpdatesSeriesDetailDto {
   description: string | null;
   status: string | null;
   year: number | null;
+  genres: Array<string | Record<string, unknown>>;
+  authors: Array<string | Record<string, unknown>>;
+  publishers: Array<string | Record<string, unknown>>;
   url: string | null;
+  cover: MangaUpdatesCoverMetadataDto | null;
   metadata: Record<string, unknown> | null;
+}
+
+export interface MangaUpdatesCoverMetadataDto {
+  trackerId: string;
+  source: string;
+  coverUrl?: string | null;
+  thumbnailUrl?: string | null;
+  fileName?: string | null;
+  mimeType?: string | null;
+  width?: number | null;
+  height?: number | null;
 }
 
 export interface MangaUpdatesStatusDto {

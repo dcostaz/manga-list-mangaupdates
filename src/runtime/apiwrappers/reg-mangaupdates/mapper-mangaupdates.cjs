@@ -7,6 +7,7 @@ const { TRACKER_DTO_CONTRACT_VERSION } = require(path.join(__dirname, '..', 'tra
 /** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesRawEntityResponse} MangaUpdatesRawEntityResponse */
 /** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesSeriesDetailDto} MangaUpdatesSeriesDetailDto */
 /** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesStatusDto} MangaUpdatesStatusDto */
+/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesCoverMetadataDto} MangaUpdatesCoverMetadataDto */
 
 class MangaUpdatesTrackerMapper {
   /**
@@ -127,21 +128,49 @@ class MangaUpdatesTrackerMapper {
       : [];
     const alternativeTitles = this._normalizeAlternativeTitles(associated);
 
-    const payloadYear = typeof payload.year === 'number'
-      ? payload.year
-      : typeof payload.year === 'string'
-        ? Number(payload.year)
-        : null;
-    const seriesYear = series && typeof series.year === 'number'
-      ? series.year
-      : series && typeof series.year === 'string'
-        ? Number(series.year)
-        : null;
-    const normalizedYear = Number.isFinite(payloadYear) && payloadYear !== null
-      ? payloadYear
-      : Number.isFinite(seriesYear) && seriesYear !== null
-        ? seriesYear
-        : null;
+    const payloadMetadata = payload.metadata && typeof payload.metadata === 'object'
+      ? payload.metadata
+      : null;
+    const seriesMetadata = series && series.metadata && typeof series.metadata === 'object'
+      ? series.metadata
+      : null;
+    const normalizedYear = this._resolveYear(
+      payload.year,
+      series && series.year,
+      series && series.year_released,
+      series && series.release_year,
+      series && series.releaseYear,
+      series && series.start_year,
+      series && series.startYear,
+      payloadMetadata && payloadMetadata.year,
+      seriesMetadata && seriesMetadata.year,
+    );
+
+    const normalizedGenres = this._normalizeMetadataStringArray(
+      [
+        payload.genres,
+        series && series.genres,
+      ],
+      ['genre', 'name', 'label', 'title', 'value']
+    );
+    const normalizedAuthors = this._normalizeContributorEntries(
+      [
+        payload.authors,
+        series && series.authors,
+      ],
+      ['name', 'author', 'fullName', 'label', 'title'],
+      'Unknown'
+    );
+    const normalizedPublishers = this._normalizeContributorEntries(
+      [
+        payload.publishers,
+        series && series.publishers,
+      ],
+      ['publisher_name', 'publisherName', 'name', 'publisher', 'label', 'title'],
+      'Unknown'
+    );
+
+    const cover = this._extractCoverMetadataDto(trackerId, payload, series);
 
     return {
       trackerId,
@@ -159,11 +188,15 @@ class MangaUpdatesTrackerMapper {
           ? series.status
           : null,
       year: normalizedYear,
+      genres: normalizedGenres,
+      authors: normalizedAuthors,
+      publishers: normalizedPublishers,
       url: typeof payload.url === 'string'
         ? payload.url
         : series && typeof series.url === 'string'
           ? series.url
           : null,
+      cover,
       metadata: series || null,
     };
   }
@@ -188,11 +221,139 @@ class MangaUpdatesTrackerMapper {
   }
 
   /**
-   * @param {unknown} _raw
-   * @returns {Array<Record<string, unknown>>}
+   * @param {MangaUpdatesRawEntityResponse | null} raw
+   * @returns {MangaUpdatesCoverMetadataDto[]}
    */
-  toCoverMetadataDtos(_raw) {
-    return [];
+  toCoverMetadataDtos(raw) {
+    const payload = raw && typeof raw === 'object' ? raw.payload : null;
+    if (!payload || typeof payload !== 'object') {
+      return [];
+    }
+
+    const series = payload.series && typeof payload.series === 'object' ? payload.series : null;
+    const payloadId = typeof payload.id === 'string' || typeof payload.id === 'number'
+      ? String(payload.id)
+      : null;
+    const seriesId = series && (typeof series.series_id === 'string' || typeof series.series_id === 'number')
+      ? String(series.series_id)
+      : series && (typeof series.id === 'string' || typeof series.id === 'number')
+        ? String(series.id)
+        : null;
+    const trackerId = payloadId || seriesId;
+
+    if (!trackerId) {
+      return [];
+    }
+
+    const cover = this._extractCoverMetadataDto(trackerId, payload, series);
+    return cover ? [cover] : [];
+  }
+
+  /**
+   * @param {string} trackerId
+   * @param {Record<string, unknown>} payload
+   * @param {Record<string, unknown> | null} series
+   * @returns {MangaUpdatesCoverMetadataDto | null}
+   */
+  _extractCoverMetadataDto(trackerId, payload, series) {
+    const payloadCover = payload.cover && typeof payload.cover === 'object'
+      ? payload.cover
+      : null;
+    const seriesImage = series && series.image && typeof series.image === 'object'
+      ? series.image
+      : null;
+    const seriesImageUrl = seriesImage && seriesImage.url && typeof seriesImage.url === 'object'
+      ? seriesImage.url
+      : null;
+
+    const coverUrl = this._normalizeString(
+      payload.coverUrl,
+      payloadCover && payloadCover.coverUrl,
+      payloadCover && payloadCover.url,
+      payloadCover && payloadCover.original,
+      seriesImage && seriesImage.coverUrl,
+      seriesImage && seriesImage.original,
+      seriesImage && seriesImage.url,
+      seriesImageUrl && seriesImageUrl.original,
+      seriesImageUrl && seriesImageUrl.thumb,
+    );
+    const thumbnailUrl = this._normalizeString(
+      payload.thumbnailUrl,
+      payloadCover && payloadCover.thumbnailUrl,
+      payloadCover && payloadCover.thumb,
+      seriesImage && seriesImage.thumbnailUrl,
+      seriesImage && seriesImage.thumb,
+      seriesImageUrl && seriesImageUrl.thumb,
+      seriesImageUrl && seriesImageUrl.original,
+    );
+
+    if (!coverUrl && !thumbnailUrl) {
+      return null;
+    }
+
+    return {
+      trackerId,
+      source: this.trackerId,
+      coverUrl: coverUrl || null,
+      thumbnailUrl: thumbnailUrl || null,
+      fileName: this._normalizeString(
+        payloadCover && payloadCover.fileName,
+        seriesImage && seriesImage.fileName,
+        seriesImageUrl && seriesImageUrl.fileName,
+      ) || null,
+      mimeType: this._normalizeString(
+        payloadCover && payloadCover.mimeType,
+        seriesImage && seriesImage.mimeType,
+        seriesImageUrl && seriesImageUrl.mimeType,
+      ) || null,
+      width: this._normalizeNumber(
+        payloadCover && payloadCover.width,
+        seriesImage && seriesImage.width,
+      ),
+      height: this._normalizeNumber(
+        payloadCover && payloadCover.height,
+        seriesImage && seriesImage.height,
+      ),
+    };
+  }
+
+  /**
+    * @param {...unknown} values
+   * @returns {string | null}
+   */
+  _normalizeString(...values) {
+    for (const value of values) {
+      if (typeof value !== 'string') {
+        continue;
+      }
+      const normalized = value.trim();
+      if (normalized) {
+        return normalized;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+    * @param {...unknown} values
+   * @returns {number | null}
+   */
+  _normalizeNumber(...values) {
+    for (const value of values) {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+      }
+
+      if (typeof value === 'string' && value.trim()) {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) {
+          return parsed;
+        }
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -204,6 +365,249 @@ class MangaUpdatesTrackerMapper {
     const values = [];
     this._collectStringValues(associated, values, new Set());
     return Array.from(new Set(values));
+  }
+
+  /**
+   * @param {...unknown} values
+   * @returns {number | null}
+   */
+  _resolveYear(...values) {
+    for (const value of values) {
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return Math.trunc(value);
+      }
+
+      if (typeof value === 'string' && value.trim()) {
+        const parsed = Number(value.trim());
+        if (Number.isFinite(parsed)) {
+          return Math.trunc(parsed);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * @param {unknown[]} candidates
+   * @param {string[]} preferredKeys
+   * @param {string} defaultType
+   * @returns {Array<{ name: string, type: string }>}
+   */
+  _normalizeContributorEntries(candidates, preferredKeys, defaultType) {
+    /** @type {Array<{ name: string, type: string }>} */
+    const normalized = [];
+
+    for (const candidate of candidates) {
+      this._collectContributorEntry(candidate, normalized, preferredKeys, defaultType);
+    }
+
+    return normalized;
+  }
+
+  /**
+   * @param {unknown} value
+   * @param {Array<{ name: string, type: string }>} bucket
+   * @param {string[]} preferredKeys
+   * @param {string} defaultType
+   * @returns {void}
+   */
+  _collectContributorEntry(value, bucket, preferredKeys, defaultType) {
+    if (Array.isArray(value)) {
+      value.forEach((entry) => this._collectContributorEntry(entry, bucket, preferredKeys, defaultType));
+      return;
+    }
+
+    /** @type {string} */
+    let name = '';
+    /** @type {string} */
+    let type = '';
+
+    if (typeof value === 'string') {
+      name = value.trim();
+    } else if (value && typeof value === 'object') {
+      const record = /** @type {Record<string, unknown>} */ (value);
+
+      for (const key of preferredKeys) {
+        if (typeof record[key] === 'string' && record[key].trim()) {
+          name = record[key].trim();
+          break;
+        }
+      }
+
+      if (!name) {
+        const attributes = record.attributes;
+        if (attributes && typeof attributes === 'object' && !Array.isArray(attributes)) {
+          const attributeRecord = /** @type {Record<string, unknown>} */ (attributes);
+          for (const key of preferredKeys) {
+            if (typeof attributeRecord[key] === 'string' && attributeRecord[key].trim()) {
+              name = attributeRecord[key].trim();
+              break;
+            }
+          }
+
+          if (!name) {
+            const localizedName = this._extractLocalizedName(attributeRecord.name);
+            if (localizedName) {
+              name = localizedName;
+            }
+          }
+
+          if (typeof attributeRecord.type === 'string' && attributeRecord.type.trim()) {
+            type = attributeRecord.type.trim();
+          } else if (typeof attributeRecord.role === 'string' && attributeRecord.role.trim()) {
+            type = attributeRecord.role.trim();
+          }
+        }
+      }
+
+      if (!name) {
+        const localizedName = this._extractLocalizedName(record.name);
+        if (localizedName) {
+          name = localizedName;
+        }
+      }
+
+      if (typeof record.type === 'string' && record.type.trim()) {
+        type = record.type.trim();
+      } else if (typeof record.role === 'string' && record.role.trim()) {
+        type = record.role.trim();
+      }
+    }
+
+    if (!name) {
+      return;
+    }
+
+    const normalizedType = type || defaultType;
+    const normalizedName = name.toLowerCase();
+    const existingSameNameIndex = bucket.findIndex((item) => item.name.toLowerCase() === normalizedName);
+
+    if (normalizedType === defaultType) {
+      if (existingSameNameIndex >= 0) {
+        return;
+      }
+    } else if (existingSameNameIndex >= 0) {
+      const existing = bucket[existingSameNameIndex];
+      if (existing.type.toLowerCase() === normalizedType.toLowerCase()) {
+        return;
+      }
+      if (existing.type.toLowerCase() === defaultType.toLowerCase()) {
+        bucket.splice(existingSameNameIndex, 1);
+      }
+    }
+
+    bucket.push({ name, type: normalizedType });
+  }
+
+  /**
+   * @param {unknown[]} candidates
+   * @param {string[]} preferredKeys
+   * @returns {string[]}
+   */
+  _normalizeMetadataStringArray(candidates, preferredKeys) {
+    /** @type {string[]} */
+    const values = [];
+    /** @type {Set<object>} */
+    const visited = new Set();
+
+    for (const candidate of candidates) {
+      this._collectMetadataStringValues(candidate, values, visited, preferredKeys, true);
+    }
+
+    return Array.from(new Set(values));
+  }
+
+  /**
+   * @param {unknown} value
+   * @param {string[]} bucket
+   * @param {Set<object>} visited
+   * @param {string[]} preferredKeys
+   * @param {boolean} allowPlainString
+   * @returns {void}
+   */
+  _collectMetadataStringValues(value, bucket, visited, preferredKeys, allowPlainString) {
+    if (typeof value === 'string') {
+      if (allowPlainString) {
+        const normalized = value.trim();
+        if (normalized) {
+          bucket.push(normalized);
+        }
+      }
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((entry) => this._collectMetadataStringValues(entry, bucket, visited, preferredKeys, allowPlainString));
+      return;
+    }
+
+    if (!value || typeof value !== 'object') {
+      return;
+    }
+
+    const record = /** @type {Record<string, unknown>} */ (value);
+    if (visited.has(record)) {
+      return;
+    }
+    visited.add(record);
+
+    for (const key of preferredKeys) {
+      const directValue = record[key];
+      if (typeof directValue === 'string' && directValue.trim()) {
+        bucket.push(directValue.trim());
+        return;
+      }
+      if (directValue && typeof directValue === 'object') {
+        const beforeLength = bucket.length;
+        this._collectMetadataStringValues(directValue, bucket, visited, preferredKeys, true);
+        if (bucket.length > beforeLength) {
+          return;
+        }
+      }
+    }
+
+    const attributes = record.attributes;
+    if (attributes && typeof attributes === 'object' && !Array.isArray(attributes)) {
+      const attributeRecord = /** @type {Record<string, unknown>} */ (attributes);
+
+      for (const key of preferredKeys) {
+        const attrValue = attributeRecord[key];
+        if (typeof attrValue === 'string' && attrValue.trim()) {
+          bucket.push(attrValue.trim());
+          return;
+        }
+      }
+
+      const localizedName = this._extractLocalizedName(attributeRecord.name);
+      if (localizedName) {
+        bucket.push(localizedName);
+        return;
+      }
+    }
+
+    const localizedName = this._extractLocalizedName(record.name);
+    if (localizedName) {
+      bucket.push(localizedName);
+    }
+  }
+
+  /**
+   * @param {unknown} value
+   * @returns {string | null}
+   */
+  _extractLocalizedName(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return null;
+    }
+
+    for (const candidate of Object.values(value)) {
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+
+    return null;
   }
 
   /**

@@ -118,7 +118,11 @@ test('wave0 mapper contract - toSeriesDetailDto maps required fields', () => {
     description: null,
     status: null,
     year: null,
+    genres: [],
+    authors: [],
+    publishers: [],
     url: null,
+    cover: null,
     metadata: null,
   });
 });
@@ -134,9 +138,18 @@ test('wave0 mapper contract - toSeriesDetailDto maps enriched nested series payl
         series_id: 777,
         title: 'Tower of God',
         associated: [{ title: 'Sin-ui Tap' }],
+        genres: [{ genre: 'Action' }, { genre: 'Fantasy' }],
+        authors: [{ name: 'SIU', type: 'story' }],
+        publishers: [{ publisher_name: 'Naver', type: 'original' }],
         description: 'A long-running webtoon.',
         status: 'Ongoing',
         year: 2010,
+        image: {
+          url: {
+            original: 'https://cdn.mangaupdates.com/image/i509035.jpg',
+            thumb: 'https://cdn.mangaupdates.com/image/i509035.thumb.jpg',
+          },
+        },
       },
     },
   });
@@ -149,16 +162,56 @@ test('wave0 mapper contract - toSeriesDetailDto maps enriched nested series payl
     description: 'A long-running webtoon.',
     status: 'Ongoing',
     year: 2010,
+    genres: ['Action', 'Fantasy'],
+    authors: [{ name: 'SIU', type: 'story' }],
+    publishers: [{ name: 'Naver', type: 'original' }],
     url: 'https://www.mangaupdates.com/series/tower-of-god',
+    cover: {
+      trackerId: '777',
+      source: 'mangaupdates',
+      coverUrl: 'https://cdn.mangaupdates.com/image/i509035.jpg',
+      thumbnailUrl: 'https://cdn.mangaupdates.com/image/i509035.thumb.jpg',
+      fileName: null,
+      mimeType: null,
+      width: null,
+      height: null,
+    },
     metadata: {
       series_id: 777,
       title: 'Tower of God',
       associated: [{ title: 'Sin-ui Tap' }],
+      genres: [{ genre: 'Action' }, { genre: 'Fantasy' }],
+      authors: [{ name: 'SIU', type: 'story' }],
+      publishers: [{ publisher_name: 'Naver', type: 'original' }],
       description: 'A long-running webtoon.',
       status: 'Ongoing',
       year: 2010,
+      image: {
+        url: {
+          original: 'https://cdn.mangaupdates.com/image/i509035.jpg',
+          thumb: 'https://cdn.mangaupdates.com/image/i509035.thumb.jpg',
+        },
+      },
     },
   });
+});
+
+test('wave0 mapper contract - toSeriesDetailDto resolves year from alternate series year keys', () => {
+  const mapper = new MangaUpdatesTrackerMapper();
+  const dto = mapper.toSeriesDetailDto({
+    payload: {
+      id: 9001,
+      title: 'Fallback Year Series',
+      series: {
+        series_id: 9001,
+        title: 'Fallback Year Series',
+        year: '',
+        year_released: '2019',
+      },
+    },
+  });
+
+  assert.equal(dto && dto.year, 2019);
 });
 
 test('wave0 mapper contract - toStatusDto normalizes numeric fields and optional status', () => {
@@ -181,7 +234,28 @@ test('wave0 mapper contract - toStatusDto normalizes numeric fields and optional
   });
 });
 
-test('wave0 mapper contract - toCoverMetadataDtos returns empty collection for placeholder mapper', () => {
+test('wave0 mapper contract - toCoverMetadataDtos maps cover metadata from series payload', () => {
   const mapper = new MangaUpdatesTrackerMapper();
-  assert.deepEqual(mapper.toCoverMetadataDtos({ payload: [] }), []);
+  assert.deepEqual(mapper.toCoverMetadataDtos({
+    payload: {
+      id: 777,
+      series: {
+        image: {
+          url: {
+            original: 'https://cdn.mangaupdates.com/image/i509035.jpg',
+            thumb: 'https://cdn.mangaupdates.com/image/i509035.thumb.jpg',
+          },
+        },
+      },
+    },
+  }), [{
+    trackerId: '777',
+    source: 'mangaupdates',
+    coverUrl: 'https://cdn.mangaupdates.com/image/i509035.jpg',
+    thumbnailUrl: 'https://cdn.mangaupdates.com/image/i509035.thumb.jpg',
+    fileName: null,
+    mimeType: null,
+    width: null,
+    height: null,
+  }]);
 });
