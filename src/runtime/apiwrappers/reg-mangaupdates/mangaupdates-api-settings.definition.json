@@ -341,7 +341,7 @@
       "required": true,
       "default": "MangaUpdates",
       "description": "Display label for UI",
-      "readOnly": true,
+      "readOnly": false,
       "isBasic": false,
       "category": "display",
       "order": 10
@@ -351,7 +351,7 @@
       "required": true,
       "default": "images/manga-updates.svg",
       "description": "Path to icon image",
-      "readOnly": true,
+      "readOnly": false,
       "isBasic": false,
       "category": "paths",
       "order": 310
@@ -376,7 +376,7 @@
         }
       ],
       "description": "Credential template definition for tracker auth prompts",
-      "readOnly": true,
+      "readOnly": false,
       "isBasic": false,
       "category": "display",
       "order": 20
