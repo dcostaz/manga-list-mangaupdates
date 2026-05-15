@@ -67,6 +67,35 @@ class MangaUpdatesTrackerMapper {
               ? imageUrl.thumb
               : null;
 
+        const rowMetadata = row && row.metadata && typeof row.metadata === 'object'
+          ? { ...row.metadata }
+          : {};
+
+        const recordYear = this._resolveYear(
+          record && record.year,
+          record && record.year_released,
+          record && record.release_year,
+          record && record.releaseYear,
+          record && record.start_year,
+          record && record.startYear,
+        );
+        const metadataYear = this._resolveYear(rowMetadata.year);
+        if (metadataYear === null && recordYear !== null) {
+          rowMetadata.year = recordYear;
+        }
+
+        const recordType = this._normalizeString(
+          record && record.type,
+          record && record.seriesType,
+          record && record.series_type,
+          record && record.publicationType,
+          record && record.publication_type,
+        );
+        const metadataType = this._normalizeString(rowMetadata.type);
+        if (!metadataType && recordType) {
+          rowMetadata.type = recordType;
+        }
+
         const matchType = row && typeof row.matchType === 'string' && ['exact', 'fuzzy', 'manual'].includes(row.matchType)
           ? row.matchType
           : 'exact';
@@ -84,7 +113,7 @@ class MangaUpdatesTrackerMapper {
           title,
           alternativeTitles,
           coverUrl,
-          metadata: row && row.metadata && typeof row.metadata === 'object' ? row.metadata : null,
+          metadata: Object.keys(rowMetadata).length > 0 ? rowMetadata : null,
           confidence,
           matchType,
         };
@@ -418,6 +447,29 @@ class MangaUpdatesTrackerMapper {
       return;
     }
 
+    const isPublisherContributorList = Array.isArray(preferredKeys)
+      && preferredKeys.some((key) => key === 'publisher_name' || key === 'publisherName' || key === 'publisher');
+
+    /** @param {unknown} rawType */
+    const normalizeContributorType = (rawType) => {
+      if (typeof rawType !== 'string') {
+        return '';
+      }
+
+      const trimmed = rawType.trim();
+      if (!trimmed) {
+        return '';
+      }
+
+      if (!isPublisherContributorList) {
+        return trimmed;
+      }
+
+      return trimmed.toLowerCase() === 'publisher'
+        ? 'Original'
+        : trimmed;
+    };
+
     /** @type {string} */
     let name = '';
     /** @type {string} */
@@ -454,9 +506,9 @@ class MangaUpdatesTrackerMapper {
           }
 
           if (typeof attributeRecord.type === 'string' && attributeRecord.type.trim()) {
-            type = attributeRecord.type.trim();
+            type = normalizeContributorType(attributeRecord.type);
           } else if (typeof attributeRecord.role === 'string' && attributeRecord.role.trim()) {
-            type = attributeRecord.role.trim();
+            type = normalizeContributorType(attributeRecord.role);
           }
         }
       }
@@ -469,9 +521,9 @@ class MangaUpdatesTrackerMapper {
       }
 
       if (typeof record.type === 'string' && record.type.trim()) {
-        type = record.type.trim();
+        type = normalizeContributorType(record.type);
       } else if (typeof record.role === 'string' && record.role.trim()) {
-        type = record.role.trim();
+        type = normalizeContributorType(record.role);
       }
     }
 

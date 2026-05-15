@@ -114,5 +114,8 @@ These suites cover build/manifest compatibility, mapper normalization,
 settings contracts and baseline matrix checks, wrapper lifecycle,
 read and write orchestration flows, and search/cover runtime behavior.
 
+Mapper normalization includes contributor role cleanup for publishers,
+including canonical alias mapping (`Publisher` -> `Original`) before dedupe.
+
 Note: The baseline matrix suite validates MangaUpdates locally and validates MangaDex when
 `../manga-list-mangadex` exists in the same parent directory layout.

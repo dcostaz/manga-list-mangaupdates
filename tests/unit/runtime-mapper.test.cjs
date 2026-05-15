@@ -95,6 +95,46 @@ test('wave0 mapper contract - toSearchResultDtos accepts enriched rows with reco
   });
 });
 
+test('wave0 mapper contract - toSearchResultDtos backfills metadata year/type from record when metadata is sparse', () => {
+  const mapper = new MangaUpdatesTrackerMapper();
+  const dtoList = mapper.toSearchResultDtos({
+    payload: {
+      data: [
+        {
+          id: 901,
+          hit_title: 'Omniscient Reader\'s Viewpoint',
+          metadata: {
+            matchedTitle: 'ORV',
+            year: null,
+            type: null,
+          },
+          record: {
+            title: 'Omniscient Reader\'s Viewpoint',
+            year_released: '2020',
+            type: 'Manhwa',
+          },
+        },
+      ],
+    },
+  });
+
+  assert.equal(dtoList.length, 1);
+  assert.deepEqual(dtoList[0], {
+    source: 'mangaupdates',
+    trackerId: '901',
+    title: 'Omniscient Reader\'s Viewpoint',
+    alternativeTitles: [],
+    coverUrl: null,
+    metadata: {
+      matchedTitle: 'ORV',
+      year: 2020,
+      type: 'Manhwa',
+    },
+    confidence: 100,
+    matchType: 'exact',
+  });
+});
+
 test('wave0 mapper contract - toSeriesDetailDto returns null on invalid payload', () => {
   const mapper = new MangaUpdatesTrackerMapper();
   assert.equal(mapper.toSeriesDetailDto(null), null);
@@ -194,6 +234,30 @@ test('wave0 mapper contract - toSeriesDetailDto maps enriched nested series payl
       },
     },
   });
+});
+
+test('wave0 mapper contract - toSeriesDetailDto canonicalizes publisher role alias to Original', () => {
+  const mapper = new MangaUpdatesTrackerMapper();
+  const dto = mapper.toSeriesDetailDto({
+    payload: {
+      id: 778,
+      title: 'Alias Publisher Series',
+      publishers: [{ publisher_name: 'Naver', type: 'Publisher' }],
+      series: {
+        series_id: 778,
+        title: 'Alias Publisher Series',
+        publishers: [
+          { publisher_name: 'Naver', type: 'original' },
+          { publisher_name: 'Line Webtoon', role: 'publisher' }
+        ]
+      }
+    }
+  });
+
+  assert.deepEqual(dto && dto.publishers, [
+    { name: 'Naver', type: 'Original' },
+    { name: 'Line Webtoon', type: 'Original' }
+  ]);
 });
 
 test('wave0 mapper contract - toSeriesDetailDto resolves year from alternate series year keys', () => {

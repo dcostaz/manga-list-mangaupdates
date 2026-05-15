@@ -84,7 +84,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 320
+      "order": 710
     },
     "api.endpoints.getUserLists.template": {
       "type": "string",
@@ -104,7 +104,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 330
+      "order": 720
     },
     "api.endpoints.listSearch.template": {
       "type": "string",
@@ -124,7 +124,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 340
+      "order": 730
     },
     "api.endpoints.listSearch.perPage": {
       "type": "number",
@@ -134,7 +134,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 350
+      "order": 740
     },
     "api.endpoints.listGetSeriesItem.template": {
       "type": "string",
@@ -154,7 +154,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 360
+      "order": 750
     },
     "api.endpoints.listUpdateSeries.template": {
       "type": "string",
@@ -174,7 +174,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 370
+      "order": 760
     },
     "api.endpoints.listAddSeries.template": {
       "type": "string",
@@ -194,7 +194,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 380
+      "order": 770
     },
     "api.endpoints.series.template": {
       "type": "string",
@@ -214,7 +214,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 390
+      "order": 780
     },
     "api.endpoints.seriesSearch.template": {
       "type": "string",
@@ -234,7 +234,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 400
+      "order": 790
     },
     "api.endpoints.seriesImage.template": {
       "type": "string",
@@ -254,7 +254,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 405
+      "order": 800
     },
     "api.endpoints.updateSerieRating.template": {
       "type": "string",
@@ -274,15 +274,15 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 410
+      "order": 810
     },
     "statusMapping.READING": {
       "type": "number",
       "required": true,
       "default": 0,
       "description": "MangaUpdates status code for currently reading",
-      "readOnly": false,
-      "isBasic": false,
+      "readOnly": true,
+      "isBasic": true,
       "category": "general",
       "order": 70
     },
@@ -291,8 +291,8 @@
       "required": true,
       "default": 2,
       "description": "MangaUpdates status code for completed",
-      "readOnly": false,
-      "isBasic": false,
+      "readOnly": true,
+      "isBasic": true,
       "category": "general",
       "order": 80
     },
@@ -301,8 +301,8 @@
       "required": true,
       "default": 1,
       "description": "MangaUpdates status code for plan to read",
-      "readOnly": false,
-      "isBasic": false,
+      "readOnly": true,
+      "isBasic": true,
       "category": "general",
       "order": 90
     },
@@ -311,8 +311,8 @@
       "required": true,
       "default": 4,
       "description": "MangaUpdates status code for on hold",
-      "readOnly": false,
-      "isBasic": false,
+      "readOnly": true,
+      "isBasic": true,
       "category": "general",
       "order": 100
     },
@@ -321,8 +321,8 @@
       "required": true,
       "default": 3,
       "description": "MangaUpdates status code for dropped",
-      "readOnly": false,
-      "isBasic": false,
+      "readOnly": true,
+      "isBasic": true,
       "category": "general",
       "order": 110
     },
@@ -331,8 +331,8 @@
       "required": true,
       "default": 101,
       "description": "MangaUpdates status code for re-reading",
-      "readOnly": false,
-      "isBasic": false,
+      "readOnly": true,
+      "isBasic": true,
       "category": "general",
       "order": 120
     },
@@ -354,7 +354,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "paths",
-      "order": 310
+      "order": 290
     },
     "ui.credentialsTemplate": {
       "type": "array",
@@ -420,7 +420,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 420
+      "order": 360
     },
     "connection.timeout.request": {
       "type": "number",
@@ -434,7 +434,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 430
+      "order": 370
     },
     "connection.timeout.search": {
       "type": "number",
@@ -448,7 +448,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 440
+      "order": 380
     },
     "connection.pool.maxSockets": {
       "type": "number",
@@ -462,7 +462,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 450
+      "order": 390
     },
     "connection.pool.maxFreeSockets": {
       "type": "number",
@@ -476,7 +476,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 460
+      "order": 400
     },
     "connection.pool.keepAlive": {
       "type": "boolean",
@@ -510,7 +510,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 470
+      "order": 410
     },
     "retry.backoff.type": {
       "type": "string",
@@ -555,7 +555,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 480
+      "order": 420
     },
     "retry.backoff.multiplier": {
       "type": "number",
@@ -595,9 +595,9 @@
       "default": true,
       "description": "Enable Redis caching (P0 - CRITICAL: reduces API load)",
       "readOnly": false,
-      "isBasic": false,
+      "isBasic": true,
       "category": "performance",
-      "order": 490
+      "order": 430
     },
     "cache.provider": {
       "type": "string",
@@ -614,7 +614,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 500
+      "order": 440
     },
     "cache.ttl.seriesMetadata": {
       "type": "number",
@@ -628,7 +628,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 510
+      "order": 820
     },
     "cache.ttl.searchResults": {
       "type": "number",
@@ -642,7 +642,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 520
+      "order": 830
     },
     "cache.ttl.readingLists": {
       "type": "number",
@@ -656,7 +656,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 530
+      "order": 840
     },
     "cache.ttl.userLists": {
       "type": "number",
@@ -670,7 +670,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 540
+      "order": 850
     },
     "cache.ttl.sessionToken": {
       "type": "number",
@@ -684,7 +684,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 550
+      "order": 860
     },
     "cache.ttl.coverUrls": {
       "type": "number",
@@ -698,7 +698,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 560
+      "order": 870
     },
     "cache.ttl.default": {
       "type": "number",
@@ -712,7 +712,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 570
+      "order": 500
     },
     "rateLimit.global.enabled": {
       "type": "boolean",
@@ -722,7 +722,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 580
+      "order": 510
     },
     "rateLimit.global.maxConcurrent": {
       "type": "number",
@@ -736,7 +736,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 590
+      "order": 520
     },
     "rateLimit.global.maxPerSecond": {
       "type": "number",
@@ -750,7 +750,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 600
+      "order": 530
     },
     "rateLimit.global.maxPerMinute": {
       "type": "number",
@@ -764,7 +764,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 610
+      "order": 540
     },
     "rateLimit.global.queueSize": {
       "type": "number",
@@ -778,7 +778,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 620
+      "order": 550
     },
     "rateLimit.perEndpoint.enabled": {
       "type": "boolean",
@@ -788,7 +788,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 630
+      "order": 560
     },
     "rateLimit.perEndpoint.defaultDelay": {
       "type": "number",
@@ -802,7 +802,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 640
+      "order": 570
     },
     "rateLimit.perEndpoint.login": {
       "type": "number",
@@ -812,7 +812,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 650
+      "order": 880
     },
     "rateLimit.perEndpoint.getUserLists": {
       "type": "number",
@@ -822,7 +822,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 660
+      "order": 890
     },
     "rateLimit.perEndpoint.listSearch": {
       "type": "number",
@@ -832,7 +832,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 670
+      "order": 900
     },
     "rateLimit.perEndpoint.listGetSeriesItem": {
       "type": "number",
@@ -842,7 +842,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 680
+      "order": 910
     },
     "rateLimit.perEndpoint.listUpdateSeries": {
       "type": "number",
@@ -852,7 +852,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 690
+      "order": 920
     },
     "rateLimit.perEndpoint.listAddSeries": {
       "type": "number",
@@ -862,7 +862,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 700
+      "order": 930
     },
     "rateLimit.perEndpoint.series": {
       "type": "number",
@@ -872,7 +872,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 710
+      "order": 940
     },
     "rateLimit.perEndpoint.seriesSearch": {
       "type": "number",
@@ -882,7 +882,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 720
+      "order": 950
     },
     "rateLimit.perEndpoint.seriesImage": {
       "type": "number",
@@ -892,7 +892,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 725
+      "order": 960
     },
     "rateLimit.perEndpoint.updateSerieRating": {
       "type": "number",
@@ -902,7 +902,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 730
+      "order": 970
     },
     "resilience.circuitBreaker.enabled": {
       "type": "boolean",
@@ -974,7 +974,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "network",
-      "order": 300
+      "order": 190
     },
     "resilience.healthCheck.interval": {
       "type": "number",
@@ -988,7 +988,7 @@
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
-      "order": 740
+      "order": 640
     }
   }
 }
