@@ -1830,20 +1830,15 @@ class MangaUpdatesAPIWrapper {
       return [this._mapSearchResult(matchResult.match, resolvedMatchType)];
     }
 
-    for (const title of titles) {
-      const fallbackResults = await this.serieSearch(
-        {
-          search: title,
-          stype: 'title',
-          type: ['manga', 'manhua', 'manhwa'],
-          perpage: 5,
-        },
-        { useCache },
-      );
+    const bestSnapshot = await this._selectBestSearchSnapshot(titles, {
+      useCache,
+      perpage: 5,
+      limit: 5,
+      stopOnExact: true,
+    });
 
-      if (Array.isArray(fallbackResults) && fallbackResults.length > 0) {
-        return fallbackResults.slice(0, 5).map((result) => this._mapSearchResult(result, 'manual'));
-      }
+    if (bestSnapshot && Array.isArray(bestSnapshot.rows) && bestSnapshot.rows.length > 0) {
+      return bestSnapshot.rows.map((entry) => this._mapSearchResult(entry.result, 'manual'));
     }
 
     return [];
@@ -1860,27 +1855,16 @@ class MangaUpdatesAPIWrapper {
     const normalizedQuery = titles.length > 0 ? titles[0] : '';
 
     try {
-      for (const title of titles) {
-        const searchResults = await this.serieSearch(
-          {
-            search: title,
-            stype: 'title',
-            type: ['manga', 'manhua', 'manhwa'],
-            perpage: 25,
-          },
-          { useCache },
-        );
+      const bestSnapshot = await this._selectBestSearchSnapshot(titles, {
+        useCache,
+        perpage: 25,
+        limit: 5,
+        stopOnExact: true,
+      });
 
-        if (!Array.isArray(searchResults) || searchResults.length === 0) {
-          continue;
-        }
-
-        const prioritized = this._rankSearchCandidates(titles, searchResults, 5);
-        const rows = prioritized.length > 0
-          ? prioritized.map((entry) => entry.result)
-          : searchResults.slice(0, 5);
-
-        const hydratedRows = await Promise.all(rows.map(async (result) => {
+      if (bestSnapshot && Array.isArray(bestSnapshot.rows) && bestSnapshot.rows.length > 0) {
+        const hydratedRows = await Promise.all(bestSnapshot.rows.map(async (entry) => {
+          const result = entry && typeof entry === 'object' ? entry.result : null;
           if (!result || typeof result !== 'object') {
             return result;
           }
@@ -1971,6 +1955,7 @@ class MangaUpdatesAPIWrapper {
     const onProgress = options && typeof options === 'object' && typeof options.onProgress === 'function'
       ? options.onProgress
       : null;
+    const startedAt = Date.now();
 
     const emit = (status, detail, extra = {}) => {
       if (!onProgress) {
@@ -1992,7 +1977,13 @@ class MangaUpdatesAPIWrapper {
       const detail = await this.getSerieDetail(Number(trackerId), { useCache });
       const coverUrl = this._extractCoverUrl(detail);
       if (detail && coverUrl) {
-        const normalized = [this._normalizeCoverSearchResult(detail, mangaCoreEntry, 'exact')];
+        const normalized = [this._normalizeCoverSearchResult(detail, mangaCoreEntry, {
+          matchType: 'exact',
+          similarity: 1,
+          attempts: 1,
+          cacheHit: useCache,
+          startedAt,
+        })];
         emit('complete', 'Cover lookup completed from tracker id', { results: normalized });
         return normalized;
       }
@@ -2024,7 +2015,13 @@ class MangaUpdatesAPIWrapper {
     if (Number.isFinite(seriesId) && seriesId > 0) {
       const detail = await this.getSerieDetail(seriesId, { useCache });
       if (detail && this._extractCoverUrl(detail)) {
-        const normalized = [this._normalizeCoverSearchResult(detail, mangaCoreEntry, resolvedMatchType)];
+        const normalized = [this._normalizeCoverSearchResult(detail, mangaCoreEntry, {
+          matchType: resolvedMatchType,
+          similarity: matchResult.similarity,
+          attempts: matchResult.attempts,
+          cacheHit: matchResult.cacheHit,
+          startedAt,
+        })];
         emit('complete', 'Cover lookup completed from exact match', { results: normalized });
         return normalized;
       }
@@ -2036,7 +2033,13 @@ class MangaUpdatesAPIWrapper {
       return [];
     }
 
-    const normalized = [this._normalizeCoverSearchResult(row, mangaCoreEntry, resolvedMatchType)];
+    const normalized = [this._normalizeCoverSearchResult(row, mangaCoreEntry, {
+      matchType: resolvedMatchType,
+      similarity: matchResult.similarity,
+      attempts: matchResult.attempts,
+      cacheHit: matchResult.cacheHit,
+      startedAt,
+    })];
     emit('complete', 'Cover lookup completed from search fallback', { results: normalized });
     return normalized;
   }
@@ -2134,70 +2137,162 @@ class MangaUpdatesAPIWrapper {
       await this.refresh(true);
     }
 
-    let attempts = 0;
-    let bestFuzzyMatch = null;
-    let bestFuzzySimilarity = 0;
+    const bestSnapshot = await this._selectBestSearchSnapshot(titles, {
+      useCache,
+      perpage: 25,
+      limit: 25,
+      stopOnExact: true,
+    });
 
-    for (const title of titles) {
+    if (!useCache) {
+      await this.refresh(false);
+    }
+
+    if (bestSnapshot && bestSnapshot.bestRow && bestSnapshot.bestRow.matchType === 'exact') {
+      return {
+        match: bestSnapshot.bestRow.result,
+        attempts: bestSnapshot.attempts,
+        cacheHit: false,
+        matchType: 'exact',
+        similarity: 1,
+      };
+    }
+
+    if (bestSnapshot && bestSnapshot.bestRow && bestSnapshot.bestRow.matchType === 'fuzzy') {
+      return {
+        match: bestSnapshot.bestRow.result,
+        attempts: bestSnapshot.attempts,
+        cacheHit: false,
+        matchType: 'fuzzy',
+        similarity: bestSnapshot.bestRow.similarity,
+      };
+    }
+
+    return {
+      match: null,
+      attempts: bestSnapshot ? bestSnapshot.attempts : 0,
+      cacheHit: false,
+      matchType: null,
+      similarity: 0,
+    };
+  }
+
+  /**
+   * Evaluate all candidate query titles and retain the best-ranked snapshot.
+   * Stops early only when an exact (100%) match appears.
+   * @param {string[]} titles
+   * @param {{ useCache: boolean, perpage: number, limit: number, stopOnExact?: boolean }} options
+   * @returns {Promise<{
+   *  title: string,
+   *  rows: Array<{ result: Record<string, unknown>, matchType: 'exact'|'fuzzy'|'search', similarity: number, index: number }>,
+   *  bestRow: { result: Record<string, unknown>, matchType: 'exact'|'fuzzy'|'search', similarity: number, index: number } | null,
+   *  attempts: number,
+   * } | null>}
+   */
+  async _selectBestSearchSnapshot(titles, options) {
+    const normalizedTitles = Array.isArray(titles)
+      ? titles.filter((title) => typeof title === 'string' && title.trim().length > 0)
+      : [];
+    if (normalizedTitles.length === 0) {
+      return null;
+    }
+
+    const stopOnExact = !!(options && options.stopOnExact);
+    const perpage = Number.isFinite(options?.perpage) && options.perpage > 0
+      ? Math.trunc(options.perpage)
+      : 25;
+    const limit = Number.isFinite(options?.limit) && options.limit > 0
+      ? Math.trunc(options.limit)
+      : 5;
+
+    /** @type {{
+     *  title: string,
+     *  rows: Array<{ result: Record<string, unknown>, matchType: 'exact'|'fuzzy'|'search', similarity: number, index: number }>,
+     *  bestRow: { result: Record<string, unknown>, matchType: 'exact'|'fuzzy'|'search', similarity: number, index: number } | null,
+     *  attempts: number,
+     * } | null} */
+    let bestSnapshot = null;
+
+    let attempts = 0;
+
+    for (const title of normalizedTitles) {
       attempts += 1;
+
       const searchResults = await this.serieSearch(
         {
           search: title,
           stype: 'title',
           type: ['manga', 'manhua', 'manhwa'],
-          perpage: 25,
+          perpage,
         },
-        { useCache },
+        { useCache: options?.useCache !== false },
       );
 
       if (!Array.isArray(searchResults) || searchResults.length === 0) {
         continue;
       }
 
-      const ranked = this._rankSearchCandidates(titles, searchResults, searchResults.length);
-      const exactMatch = ranked.find((entry) => entry.matchType === 'exact');
-      if (exactMatch) {
-        if (!useCache) {
-          await this.refresh(false);
-        }
+      const ranked = this._rankSearchCandidates(normalizedTitles, searchResults, Math.max(limit, searchResults.length));
+      const topRows = ranked.slice(0, limit);
+      const bestRow = topRows.length > 0 ? topRows[0] : null;
 
+      if (!bestRow) {
+        continue;
+      }
+
+      const snapshot = {
+        title,
+        rows: topRows,
+        bestRow,
+        attempts,
+      };
+
+      if (!bestSnapshot) {
+        bestSnapshot = snapshot;
+      } else {
+        const currentRank = this._resolveMatchTypeRank(bestSnapshot.bestRow ? bestSnapshot.bestRow.matchType : 'search');
+        const nextRank = this._resolveMatchTypeRank(bestRow.matchType);
+
+        if (nextRank < currentRank) {
+          bestSnapshot = snapshot;
+        } else if (nextRank === currentRank) {
+          const currentSimilarity = bestSnapshot.bestRow ? bestSnapshot.bestRow.similarity : 0;
+          if (bestRow.similarity > currentSimilarity) {
+            bestSnapshot = snapshot;
+          }
+        }
+      }
+
+      if (stopOnExact && bestRow.matchType === 'exact') {
         return {
-          match: exactMatch.result,
+          ...snapshot,
           attempts,
-          cacheHit: false,
-          matchType: 'exact',
-          similarity: 1,
         };
       }
-
-      const fuzzyMatch = ranked.find((entry) => entry.matchType === 'fuzzy');
-      if (fuzzyMatch && fuzzyMatch.similarity > bestFuzzySimilarity) {
-        bestFuzzyMatch = fuzzyMatch.result;
-        bestFuzzySimilarity = fuzzyMatch.similarity;
-      }
     }
 
-    if (!useCache) {
-      await this.refresh(false);
-    }
-
-    if (bestFuzzyMatch) {
-      return {
-        match: bestFuzzyMatch,
-        attempts,
-        cacheHit: false,
-        matchType: 'fuzzy',
-        similarity: bestFuzzySimilarity,
-      };
+    if (!bestSnapshot) {
+      return null;
     }
 
     return {
-      match: null,
+      ...bestSnapshot,
       attempts,
-      cacheHit: false,
-      matchType: null,
-      similarity: 0,
     };
+  }
+
+  /**
+   * @param {'exact'|'fuzzy'|'search'} matchType
+   * @returns {number}
+   */
+  _resolveMatchTypeRank(matchType) {
+    if (matchType === 'exact') {
+      return 0;
+    }
+    if (matchType === 'fuzzy') {
+      return 1;
+    }
+    return 2;
   }
 
   /**
@@ -2565,10 +2660,19 @@ class MangaUpdatesAPIWrapper {
   /**
    * @param {Record<string, unknown>} detail
    * @param {Record<string, unknown>} mangaCoreEntry
-  * @param {'exact' | 'fuzzy' | 'manual'} matchType
+   * @param {{
+   *  matchType: 'exact' | 'fuzzy' | 'manual',
+   *  similarity?: number,
+   *  attempts?: number,
+   *  cacheHit?: boolean,
+   *  startedAt?: number,
+   * }} context
    * @returns {Record<string, unknown>}
    */
-  _normalizeCoverSearchResult(detail, mangaCoreEntry, matchType) {
+  _normalizeCoverSearchResult(detail, mangaCoreEntry, context) {
+    const matchType = context && typeof context === 'object' && typeof context.matchType === 'string'
+      ? context.matchType
+      : 'manual';
     const coverUrl = this._extractCoverUrl(detail);
     const seriesId = detail && (typeof detail.series_id === 'number' || typeof detail.series_id === 'string')
       ? String(detail.series_id)
@@ -2580,24 +2684,67 @@ class MangaUpdatesAPIWrapper {
       : mangaCoreEntry && typeof mangaCoreEntry.title === 'string' && mangaCoreEntry.title.trim()
         ? mangaCoreEntry.title.trim()
         : `series-${seriesId}`;
+    const similarity = context && typeof context.similarity === 'number' && Number.isFinite(context.similarity)
+      ? context.similarity
+      : null;
+    const score = this._resolveCoverMatchScore(matchType, similarity);
+    const canonicalUrl = detail && typeof detail.url === 'string' && detail.url.trim()
+      ? detail.url.trim()
+      : `https://www.mangaupdates.com/series/${seriesId}`;
+    const fetchedAt = new Date().toISOString();
+    const startedAt = context && typeof context.startedAt === 'number' ? context.startedAt : Date.now();
+    const attempts = context && typeof context.attempts === 'number' && Number.isFinite(context.attempts)
+      ? Math.max(1, Math.round(context.attempts))
+      : 1;
 
     return {
       source: SERVICE_NAME,
-      trackerId: seriesId,
-      mangaId: seriesId,
-      mangaCoreKey: mangaCoreEntry && typeof mangaCoreEntry === 'object' && typeof mangaCoreEntry.key === 'string'
-        ? mangaCoreEntry.key
-        : null,
       title,
-      url: coverUrl,
-      fileName: `${toSlug(title) || `series-${seriesId}`}.jpg`,
-      extension: 'jpg',
-      mimeType: 'image/jpeg',
-      canonicalUrl: detail && typeof detail.url === 'string' ? detail.url : null,
-      fetchedAt: new Date().toISOString(),
-      confidence: matchType === 'exact' ? 100 : matchType === 'fuzzy' ? 80 : 0,
-      matchType,
+      thumbnailUrl: coverUrl || '',
+      canonicalUrl,
+      tracker: {
+        id: seriesId,
+        url: coverUrl || '',
+        fileName: `${toSlug(title) || `series-${seriesId}`}.jpg`,
+        description: title,
+        score,
+        extras: {
+          matchType,
+          similarity,
+          seriesId,
+          mangaCoreKey: mangaCoreEntry && typeof mangaCoreEntry === 'object' && typeof mangaCoreEntry.key === 'string'
+            ? mangaCoreEntry.key
+            : null,
+        },
+      },
+      fetchedAt,
+      telemetry: {
+        durationMs: Math.max(0, Date.now() - startedAt),
+        cacheHit: context && context.cacheHit === true,
+        attempts,
+      },
     };
+  }
+
+  /**
+   * @param {'exact' | 'fuzzy' | 'manual'} matchType
+   * @param {number | null} similarity
+   * @returns {number}
+   */
+  _resolveCoverMatchScore(matchType, similarity) {
+    if (matchType === 'exact') {
+      return 100;
+    }
+
+    if (matchType === 'fuzzy') {
+      if (typeof similarity === 'number' && Number.isFinite(similarity)) {
+        const boundedSimilarity = Math.max(0, Math.min(1, similarity));
+        return Math.max(60, Math.min(95, Math.round(boundedSimilarity * 100)));
+      }
+      return 80;
+    }
+
+    return 50;
   }
 
   /**

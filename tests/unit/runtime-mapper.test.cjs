@@ -52,8 +52,15 @@ test('wave0 mapper contract - toSearchResultDtos maps valid rows and drops inval
     alternativeTitles: [],
     coverUrl: null,
     metadata: null,
-    confidence: 100,
-    matchType: 'exact',
+    wrapperEvidence: {
+      classification: 'weak',
+      matchedField: 'title',
+      matchedText: 'A',
+      similarity: null,
+      tokenOverlap: null,
+      wrapperScore: null,
+      algorithmVersion: 'mangaupdates-search-v2',
+    },
   });
 });
 
@@ -90,8 +97,15 @@ test('wave0 mapper contract - toSearchResultDtos accepts enriched rows with reco
     alternativeTitles: ['TBATE'],
     coverUrl: 'https://img.example/tbate-thumb.jpg',
     metadata: { matchedTitle: 'TBATE' },
-    confidence: 87,
-    matchType: 'fuzzy',
+    wrapperEvidence: {
+      classification: 'fuzzy',
+      matchedField: 'title',
+      matchedText: 'The Beginning After the End',
+      similarity: null,
+      tokenOverlap: null,
+      wrapperScore: 0.87,
+      algorithmVersion: 'mangaupdates-search-v2',
+    },
   });
 });
 
@@ -130,8 +144,15 @@ test('wave0 mapper contract - toSearchResultDtos backfills metadata year/type fr
       year: 2020,
       type: 'Manhwa',
     },
-    confidence: 100,
-    matchType: 'exact',
+    wrapperEvidence: {
+      classification: 'weak',
+      matchedField: 'title',
+      matchedText: 'Omniscient Reader\'s Viewpoint',
+      similarity: null,
+      tokenOverlap: null,
+      wrapperScore: null,
+      algorithmVersion: 'mangaupdates-search-v2',
+    },
   });
 });
 

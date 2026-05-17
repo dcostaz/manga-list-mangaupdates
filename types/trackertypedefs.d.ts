@@ -174,6 +174,11 @@ export interface MangaUpdatesTrackerModuleDescriptor {
   supportsCoverUpload: boolean;
   maxUploadSize: number | null;
   acceptedMimeTypes: string[];
+  supportsCoverInSearchResult: boolean;
+  supportsCoverByIdLookup: boolean;
+  supportsMultiCoverPerId: boolean;
+  supportsBatchCoverByIdLookup: boolean;
+  preferredCoverHydrationCount: number | null;
   WrapperClass: Function;
   MapperClass: Function;
   SettingsClass: Function;
