@@ -81,6 +81,68 @@ function toSlug(value) {
 }
 
 /**
+ * @param {string[]} expectedTitles
+ * @param {string[]} candidateTitles
+ * @returns {{ hasExactMatch: boolean, bestSimilarity: number }}
+ */
+function calculateTitleSimilarity(expectedTitles, candidateTitles, containmentScore = 0.85) {
+  let hasExactMatch = false;
+  let bestSimilarity = 0;
+
+  for (const expectedTitle of expectedTitles) {
+    if (typeof expectedTitle !== 'string') {
+      continue;
+    }
+
+    const expectedSlug = toSlug(expectedTitle);
+    if (!expectedSlug) {
+      continue;
+    }
+
+    for (const candidateTitle of candidateTitles) {
+      if (typeof candidateTitle !== 'string') {
+        continue;
+      }
+
+      const candidateSlug = toSlug(candidateTitle);
+      if (!candidateSlug) {
+        continue;
+      }
+
+      if (candidateSlug === expectedSlug) {
+        hasExactMatch = true;
+        bestSimilarity = 1;
+        continue;
+      }
+
+      let similarity = 0;
+      if (candidateSlug.includes(expectedSlug) || expectedSlug.includes(candidateSlug)) {
+        similarity = containmentScore;
+      } else {
+        const expectedTokens = expectedSlug.split('-').filter(Boolean);
+        const candidateTokens = candidateSlug.split('-').filter(Boolean);
+        const expectedSet = new Set(expectedTokens);
+        const candidateSet = new Set(candidateTokens);
+        const intersection = [...expectedSet].filter((token) => candidateSet.has(token)).length;
+        const union = new Set([...expectedSet, ...candidateSet]).size;
+        if (union > 0) {
+          similarity = intersection / union;
+        }
+      }
+
+      if (similarity > bestSimilarity) {
+        bestSimilarity = similarity;
+      }
+    }
+  }
+
+  return {
+    hasExactMatch,
+    bestSimilarity,
+  };
+}
+
+/**
  * @returns {TrackerHttpClientLike}
  */
 function createFallbackHttpClient() {
@@ -427,6 +489,41 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * @param {string} key
+   * @returns {Promise<unknown | null>}
+   */
+  async _getJSONCacheValue(key) {
+    if (!this.cacheAdapter || typeof this.cacheAdapter.getValue !== 'function') {
+      return null;
+    }
+
+    const raw = await this.cacheAdapter.getValue(key);
+    if (!raw) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(raw);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * @param {string} key
+   * @param {unknown} value
+   * @param {number} ttlSeconds
+   * @returns {Promise<void>}
+   */
+  async _setJSONCacheValue(key, value, ttlSeconds) {
+    if (!this.cacheAdapter || typeof this.cacheAdapter.setValue !== 'function') {
+      return;
+    }
+
+    await this.cacheAdapter.setValue(key, JSON.stringify(value), ttlSeconds);
+  }
+
+  /**
    * @param {string} dottedKey
    * @returns {unknown}
    */
@@ -614,17 +711,10 @@ class MangaUpdatesAPIWrapper {
 
     const refreshRequired = await this.refresh();
     const cacheKey = 'mangaupdates_user_lists';
-    if (!refreshRequired && this.cacheAdapter) {
-      const cached = await this.cacheAdapter.getValue(cacheKey);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) {
-            return parsed;
-          }
-        } catch (error) {
-          // Ignore cache parse errors and continue to live request.
-        }
+    if (!refreshRequired) {
+      const cached = await this._getJSONCacheValue(cacheKey);
+      if (Array.isArray(cached)) {
+        return cached;
       }
     }
 
@@ -651,9 +741,7 @@ class MangaUpdatesAPIWrapper {
         ? responseData.results
         : [];
 
-    if (this.cacheAdapter) {
-      await this.cacheAdapter.setValue(cacheKey, JSON.stringify(lists), 3600);
-    }
+    await this._setJSONCacheValue(cacheKey, lists, 3600);
 
     if (refreshRequired) {
       await this.refresh(false);
@@ -669,17 +757,10 @@ class MangaUpdatesAPIWrapper {
   async getSeriesListStatus(id = 0) {
     const refreshRequired = await this.refresh();
     const cacheKey = `getSeriesListStatus%%${id}`;
-    if (!refreshRequired && this.cacheAdapter) {
-      const cached = await this.cacheAdapter.getValue(cacheKey);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (parsed && typeof parsed === 'object') {
-            return parsed;
-          }
-        } catch (error) {
-          // Ignore cache parse errors and continue to live request.
-        }
+    if (!refreshRequired) {
+      const cached = await this._getJSONCacheValue(cacheKey);
+      if (cached && typeof cached === 'object') {
+        return /** @type {Record<string, unknown>} */ (cached);
       }
     }
 
@@ -711,8 +792,8 @@ class MangaUpdatesAPIWrapper {
         ? response.data
         : null;
 
-      if (payload && this.cacheAdapter) {
-        await this.cacheAdapter.setValue(cacheKey, JSON.stringify(payload), 3600);
+      if (payload) {
+        await this._setJSONCacheValue(cacheKey, payload, 3600);
       }
 
       if (refreshRequired) {
@@ -830,17 +911,10 @@ class MangaUpdatesAPIWrapper {
 
     const refreshRequired = await this.refresh();
     const cacheKey = `getSerieDetail%%${numericId}`;
-    if (!refreshRequired && this.cacheAdapter) {
-      const cached = await this.cacheAdapter.getValue(cacheKey);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (parsed && typeof parsed === 'object') {
-            return parsed;
-          }
-        } catch (error) {
-          // Ignore cache parse errors and continue to live request.
-        }
+    if (!refreshRequired) {
+      const cached = await this._getJSONCacheValue(cacheKey);
+      if (cached && typeof cached === 'object') {
+        return /** @type {Record<string, unknown>} */ (cached);
       }
     }
 
@@ -876,7 +950,7 @@ class MangaUpdatesAPIWrapper {
         const ttl = typeof ttlCandidate === 'number' && Number.isFinite(ttlCandidate) && ttlCandidate > 0
           ? ttlCandidate
           : 24 * 60 * 60;
-        await this.cacheAdapter.setValue(cacheKey, JSON.stringify(payload), ttl);
+        await this._setJSONCacheValue(cacheKey, payload, ttl);
       }
 
       if (refreshRequired) {
@@ -985,17 +1059,10 @@ class MangaUpdatesAPIWrapper {
     const cacheKey = `serieSearch%%${toSlug(payload.search)}%%${perpage}`;
 
     const refreshRequired = await this.refresh();
-    if (!refreshRequired && useCache && this.cacheAdapter) {
-      const cached = await this.cacheAdapter.getValue(cacheKey);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) {
-            return parsed;
-          }
-        } catch (error) {
-          // Ignore cache parse errors and continue to live request.
-        }
+    if (!refreshRequired && useCache) {
+      const cached = await this._getJSONCacheValue(cacheKey);
+      if (Array.isArray(cached)) {
+        return cached;
       }
     }
 
@@ -1034,12 +1101,12 @@ class MangaUpdatesAPIWrapper {
         ? responseData
         : [];
 
-    if (results.length > 0 && this.cacheAdapter) {
+    if (results.length > 0) {
       const ttlCandidate = this._resolveSettingValue('cache.ttl.searchResults');
       const ttl = typeof ttlCandidate === 'number' && Number.isFinite(ttlCandidate) && ttlCandidate > 0
         ? ttlCandidate
         : 3600;
-      await this.cacheAdapter.setValue(cacheKey, JSON.stringify(results), ttl);
+      await this._setJSONCacheValue(cacheKey, results, ttl);
     }
 
     if (refreshRequired) {
@@ -1902,12 +1969,12 @@ class MangaUpdatesAPIWrapper {
             : null;
           const itemId = row && (typeof row.series_id === 'number' || typeof row.series_id === 'string')
             ? String(row.series_id)
-            : `mu-${toSlug(typeof title === 'string' ? title : '')}`;
+            : `mu-${toSlug(typeof normalizedQuery === 'string' ? normalizedQuery : '')}`;
           const itemTitle = row && typeof row.title === 'string' && row.title.trim()
             ? row.title.trim()
             : result && typeof result === 'object' && typeof result.hit_title === 'string' && result.hit_title.trim()
               ? result.hit_title.trim()
-              : title;
+              : normalizedQuery;
 
           if (result && typeof result === 'object') {
             return {
@@ -2197,13 +2264,18 @@ class MangaUpdatesAPIWrapper {
       return null;
     }
 
-    const stopOnExact = !!(options && options.stopOnExact);
+    const exactMatchPolicyRaw = this._resolveSettingValue('search.exactMatchPolicy');
+    const stopOnExact = exactMatchPolicyRaw === 'highestScore' ? false : !!(options && options.stopOnExact);
     const perpage = Number.isFinite(options?.perpage) && options.perpage > 0
       ? Math.trunc(options.perpage)
       : 25;
+    const candidateLimitRaw = this._resolveSettingValue('search.candidateLimit');
+    const candidateLimit = typeof candidateLimitRaw === 'number' && Number.isFinite(candidateLimitRaw) && candidateLimitRaw > 0
+      ? Math.trunc(candidateLimitRaw)
+      : 5;
     const limit = Number.isFinite(options?.limit) && options.limit > 0
       ? Math.trunc(options.limit)
-      : 5;
+      : candidateLimit;
 
     /** @type {{
      *  title: string,
@@ -2302,6 +2374,14 @@ class MangaUpdatesAPIWrapper {
    * @returns {Array<{ result: Record<string, unknown>, matchType: 'exact'|'fuzzy'|'search', similarity: number, index: number }>}
    */
   _rankSearchCandidates(targetTitles, searchResults, limit = 5) {
+    const fuzzyThresholdRaw = this._resolveSettingValue('search.fuzzyThreshold');
+    const fuzzyThreshold = typeof fuzzyThresholdRaw === 'number' && Number.isFinite(fuzzyThresholdRaw) && fuzzyThresholdRaw > 0
+      ? fuzzyThresholdRaw
+      : 0.60;
+    const containmentScoreRaw = this._resolveSettingValue('search.containmentScore');
+    const containmentScore = typeof containmentScoreRaw === 'number' && Number.isFinite(containmentScoreRaw)
+      ? containmentScoreRaw
+      : 0.85;
     /** @type {Array<{ result: Record<string, unknown>, matchType: 'exact'|'fuzzy'|'search', similarity: number, index: number }>}
      */
     const ranked = [];
@@ -2309,7 +2389,7 @@ class MangaUpdatesAPIWrapper {
     for (let index = 0; index < searchResults.length; index += 1) {
       const result = searchResults[index];
       const candidateTitles = this._collectCandidateTitles(result);
-      const similarityData = this._calculateTitleSimilarity(targetTitles, candidateTitles);
+      const similarityData = calculateTitleSimilarity(targetTitles, candidateTitles, containmentScore);
 
       if (similarityData.hasExactMatch) {
         ranked.push({
@@ -2321,7 +2401,7 @@ class MangaUpdatesAPIWrapper {
         continue;
       }
 
-      if (similarityData.bestSimilarity >= 0.55) {
+      if (similarityData.bestSimilarity >= fuzzyThreshold) {
         ranked.push({
           result,
           matchType: 'fuzzy',
@@ -2395,68 +2475,6 @@ class MangaUpdatesAPIWrapper {
     }
 
     return deduped;
-  }
-
-  /**
-   * @param {string[]} expectedTitles
-   * @param {string[]} candidateTitles
-   * @returns {{ hasExactMatch: boolean, bestSimilarity: number }}
-   */
-  _calculateTitleSimilarity(expectedTitles, candidateTitles) {
-    let hasExactMatch = false;
-    let bestSimilarity = 0;
-
-    for (const expectedTitle of expectedTitles) {
-      if (typeof expectedTitle !== 'string') {
-        continue;
-      }
-
-      const expectedSlug = toSlug(expectedTitle);
-      if (!expectedSlug) {
-        continue;
-      }
-
-      for (const candidateTitle of candidateTitles) {
-        if (typeof candidateTitle !== 'string') {
-          continue;
-        }
-
-        const candidateSlug = toSlug(candidateTitle);
-        if (!candidateSlug) {
-          continue;
-        }
-
-        if (candidateSlug === expectedSlug) {
-          hasExactMatch = true;
-          bestSimilarity = 1;
-          continue;
-        }
-
-        let similarity = 0;
-        if (candidateSlug.includes(expectedSlug) || expectedSlug.includes(candidateSlug)) {
-          similarity = 0.85;
-        } else {
-          const expectedTokens = expectedSlug.split('-').filter(Boolean);
-          const candidateTokens = candidateSlug.split('-').filter(Boolean);
-          const expectedSet = new Set(expectedTokens);
-          const candidateSet = new Set(candidateTokens);
-          const intersection = [...expectedSet].filter((token) => candidateSet.has(token)).length;
-          const union = new Set([...expectedSet, ...candidateSet]).size;
-          if (union > 0) {
-            similarity = intersection / union;
-          }
-        }
-
-        if (similarity > bestSimilarity) {
-          bestSimilarity = similarity;
-        }
-      }
-    }
-
-    return {
-      hasExactMatch,
-      bestSimilarity,
-    };
   }
 
   /**

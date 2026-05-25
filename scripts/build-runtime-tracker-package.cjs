@@ -239,13 +239,16 @@ function buildEffectiveSettingsDocument() {
 }
 
 /**
- * @returns {{ serviceName: string, hostApiVersion: string, dtoContractVersion: string, wrapperId: string, entrypoints: { trackerModule: string, mapperModule: string, settingsFile: string } }}
+ * @returns {{ serviceName: string, hostApiVersion: string, hostContractVersionRange: string, dtoContractVersion: string, settingsContractVersion: string, wrapperId: string, entrypoints: { trackerModule: string, mapperModule: string, settingsFile: string } }}
  */
 function buildManifest(hostApiVersion) {
+  const majorVersion = String(hostApiVersion || '1.0.0').split('.')[0] || '1';
   return {
     serviceName: 'mangaupdates',
     hostApiVersion,
+    hostContractVersionRange: `^${majorVersion}.0.0`,
     dtoContractVersion: TRACKER_DTO_CONTRACT_VERSION,
+    settingsContractVersion: TRACKER_SETTINGS_CONTRACT_VERSION,
     wrapperId: 'mangaupdates',
     entrypoints: {
       trackerModule: 'apiwrappers/reg-mangaupdates/tracker-module.cjs',
