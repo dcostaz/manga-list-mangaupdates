@@ -106,7 +106,7 @@ function createMockHttpClient() {
   return { client, hooks };
 }
 
-test('wave3 token flow - getToken can hydrate credentials via callback and cache token', async () => {
+test('wave3 token flow - getToken uses set credentials and caches token', async () => {
   const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
   const { client, hooks: httpHooks } = createMockHttpClient();
 
@@ -116,9 +116,9 @@ test('wave3 token flow - getToken can hydrate credentials via callback and cache
       'api.endpoints.login.template': '${baseUrl}/account/login',
     },
     httpClient: client,
-    cacheAdapter,
-    onCredentialsRequired: async () => ({ username: 'demo', password: 'secret' }),
+    context: { cache: cacheAdapter, utils: null },
   });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
   const token = await wrapper.getToken();
   assert.equal(token, 'wave3-token');
@@ -147,7 +147,7 @@ test('wave3 read flow - getUserLists reads from endpoint then cache', async () =
       'api.endpoints.getUserLists.template': '${baseUrl}/lists',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -180,7 +180,7 @@ test('wave3 read flow - getSeriesListStatus returns null on 404', async () => {
       'api.endpoints.listGetSeriesItem.template': '${baseUrl}/lists/series/${series_id}',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -211,7 +211,7 @@ test('wave3 read flow - getReadingStatusFromListId maps list index to configured
       'statusMapping.COMPLETED': 1,
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -255,7 +255,7 @@ test('wave3 read flow - getUserProgress normalizes chapter, volume, timestamp an
       'statusMapping.READING': 0,
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -280,7 +280,7 @@ test('wave3 read flow - getSeriesUrl returns payload url when provided by series
       'api.endpoints.login.template': '${baseUrl}/account/login',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
 
   wrapper.getSeriesByIdRaw = async () => ({
@@ -319,7 +319,7 @@ test('wave3 series detail - getSerieDetail reads endpoint and then cache', async
       'cache.ttl.seriesMetadata': 10,
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -366,7 +366,7 @@ test('wave3 series detail - getSeriesById returns normalized match payload', asy
       'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -403,7 +403,7 @@ test('wave3 series detail - getSeriesByIdRaw returns transport payload from deta
       'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -442,7 +442,7 @@ test('wave3 search flow - serieSearch calls endpoint and returns results', async
       'cache.ttl.searchResults': 300,
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -469,7 +469,7 @@ test('wave3 search flow - serieSearch useCache false bypasses cache', async () =
       'api.endpoints.seriesSearch.template': '${baseUrl}/series/search',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -488,7 +488,7 @@ test('wave3 read flow - getSeriesCover returns best available image URL', async 
       'api.endpoints.login.template': '${baseUrl}/account/login',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
 
   wrapper.getSerieDetail = async () => ({

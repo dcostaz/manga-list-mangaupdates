@@ -158,7 +158,7 @@ test('wave4 write flow - updateListSeries returns 401 when not authenticated', a
       'api.endpoints.listUpdateSeries.template': '${baseUrl}/lists/series/update',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
 
   const result = await wrapper.updateListSeries({
@@ -182,7 +182,7 @@ test('wave4 write flow - updateListSeries transforms chapter and volume to posit
       'api.endpoints.listUpdateSeries.template': '${baseUrl}/lists/series/update',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -220,7 +220,7 @@ test('wave4 write flow - addListSeries normalizes single object payload to array
       'api.endpoints.listAddSeries.template': '${baseUrl}/lists/series',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -260,7 +260,7 @@ test('wave4 write flow - updateStatus maps list_id and delegates to updateListSe
       'api.endpoints.listUpdateSeries.template': '${baseUrl}/lists/series/update',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -304,7 +304,7 @@ test('wave4 write flow - updateStatus throws wrapped error when list cannot be r
       'api.endpoints.listUpdateSeries.template': '${baseUrl}/lists/series/update',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -338,7 +338,7 @@ test('wave4 write flow - updateSerieRating updates rating endpoint payload', asy
       'api.endpoints.updateSerieRating.template': '${baseUrl}/series/${series_id}/rating',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -379,7 +379,7 @@ test('wave4 write flow - setUserProgress returns missing subscription error when
       'statusMapping.READING': 1,
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -433,7 +433,7 @@ test('wave4 write flow - setUserProgress updates list and rating and reports upd
       'statusMapping.COMPLETED': 20,
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -506,7 +506,7 @@ test('wave4 write flow - subscribeToReadingList adds missing series and applies 
       'statusMapping.COMPLETED': 20,
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -582,7 +582,7 @@ test('wave4 write flow - subscribeToReadingList updates existing series and tole
       'statusMapping.READING': 10,
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -625,7 +625,7 @@ test('wave4 write flow - updateSeries patches series payload and invalidates det
       'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -663,7 +663,7 @@ test('wave4 write flow - updateSeriesCover posts image payload and invalidates d
       'api.endpoints.seriesImage.template': '${baseUrl}/series/${series_id}/image',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -694,7 +694,7 @@ test('wave4 write flow - deleteSeriesCover deletes endpoint and invalidates deta
       'api.endpoints.seriesImage.template': '${baseUrl}/series/${series_id}/image',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 

@@ -23,7 +23,7 @@ const {
   '..',
   '..',
   'scripts',
-  'build-runtime-tracker-package.cjs',
+  'build-runtime-plugin-package.cjs',
 ));
 
 /**
@@ -92,7 +92,6 @@ test('wave1 init path - serviceSettings resolve from apiSettings when not provid
     });
 
     assert.equal(wrapper.settings['api.baseUrl'], 'https://api.mangaupdates.com/v1');
-    assert.equal(typeof wrapper.onCredentialsRequired, 'function');
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }

@@ -267,7 +267,7 @@
       "required": true,
       "default": 0,
       "description": "MangaUpdates status code for currently reading",
-      "readOnly": true,
+      "readOnly": false,
       "isBasic": true,
       "category": "general",
       "order": 50
@@ -277,7 +277,7 @@
       "required": true,
       "default": 2,
       "description": "MangaUpdates status code for completed",
-      "readOnly": true,
+      "readOnly": false,
       "isBasic": true,
       "category": "general",
       "order": 60
@@ -287,7 +287,7 @@
       "required": true,
       "default": 1,
       "description": "MangaUpdates status code for plan to read",
-      "readOnly": true,
+      "readOnly": false,
       "isBasic": true,
       "category": "general",
       "order": 70
@@ -297,7 +297,7 @@
       "required": true,
       "default": 4,
       "description": "MangaUpdates status code for on hold",
-      "readOnly": true,
+      "readOnly": false,
       "isBasic": true,
       "category": "general",
       "order": 80
@@ -307,17 +307,17 @@
       "required": true,
       "default": 3,
       "description": "MangaUpdates status code for dropped",
-      "readOnly": true,
+      "readOnly": false,
       "isBasic": true,
       "category": "general",
       "order": 90
     },
     "statusMapping.RE_READING": {
-      "type": "number",
-      "required": true,
-      "default": 101,
-      "description": "MangaUpdates status code for re-reading",
-      "readOnly": true,
+      "type": "number | null",
+      "required": false,
+      "default": null,
+      "description": "Custom MangaUpdates list ID for Re-reading status. Create a custom list in MangaUpdates and paste its list_id here. Leave null to skip Re-reading sync.",
+      "readOnly": false,
       "isBasic": true,
       "category": "general",
       "order": 100

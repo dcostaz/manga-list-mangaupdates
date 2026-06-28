@@ -1,0 +1,23 @@
+{
+  "pluginName": "mangaupdates",
+  "pluginType": "tracker",
+  "pluginContractVersion": "1.0.0",
+  "hostApiVersion": "1.0.0",
+  "iconPath": "images/mangaupdates-icon.svg",
+  "capabilities": ["tracker.search", "tracker.sync", "tracker.cover"],
+  "entrypoints": {
+    "pluginModule": "apiwrappers/reg-mangaupdates/plugin-module.cjs",
+    "settingsFile": "apiwrappers/reg-mangaupdates/mangaupdates-api-settings.json"
+  },
+  "syncOptions": {
+    "statusVocabulary": {
+      "READING":      "reading",
+      "COMPLETED":    "complete",
+      "PLAN_TO_READ": "wish",
+      "ON_HOLD":      "hold",
+      "DROPPED":      "dropped",
+      "RE_READING":   null
+    },
+    "supportedActions": []
+  }
+}
