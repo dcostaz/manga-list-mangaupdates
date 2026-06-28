@@ -6,17 +6,14 @@ const MangaUpdatesAPISettings = require(path.join(__dirname, 'api-settings-manga
 
 const SERVICE_NAME = 'mangaupdates';
 
-/** @typedef {import('../../../../types/trackertypedefs').TrackerServiceSettings} TrackerServiceSettings */
-/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesAPIWrapperCtorParams} MangaUpdatesAPIWrapperCtorParams */
-/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesAPIWrapperInitOptions} MangaUpdatesAPIWrapperInitOptions */
-/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesRawSearchResponse} MangaUpdatesRawSearchResponse */
-/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesRawEntityResponse} MangaUpdatesRawEntityResponse */
-/** @typedef {import('../../../../types/trackertypedefs').TrackerHttpClientLike} TrackerHttpClientLike */
-/** @typedef {import('../../../../types/trackertypedefs').TrackerCredentials} TrackerCredentials */
-/** @typedef {import('../../../../types/trackertypedefs').TrackerCacheAdapterLike} TrackerCacheAdapterLike */
-/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesTokenResponse} MangaUpdatesTokenResponse */
-/** @typedef {import('../../../../types/trackertypedefs').TrackerUserProgress} TrackerUserProgress */
-/** @typedef {import('../../../../types/trackertypedefs').TrackerReadingStatus} TrackerReadingStatus */
+/** @typedef {import('../../../../types/plugintypedefs').PluginServiceSettings} PluginServiceSettings */
+/** @typedef {import('../../../../types/plugintypedefs').PluginCredential} PluginCredential */
+/** @typedef {import('../../../../types/plugintypedefs').PluginReadingStatus} PluginReadingStatus */
+/** @typedef {import('../../../../types/plugintypedefs').PluginProgressDTO} PluginProgressDTO */
+/** @typedef {import('../../../../types/plugintypedefs').PluginSearchResult} PluginSearchResult */
+/** @typedef {import('../../../../types/plugintypedefs').PluginInitResult} PluginInitResult */
+/** @typedef {import('../../../../types/plugintypedefs').PluginStatus} PluginStatus */
+/** @typedef {import('../../../../types/plugincontexttypedefs').PluginContextLike} PluginContextLike */
 
 /**
  * @param {string} html
@@ -187,79 +184,31 @@ function createDefaultHttpClient() {
   return createFallbackHttpClient();
 }
 
-/**
- * @returns {TrackerCacheAdapterLike}
- */
-function createInMemoryCacheAdapter() {
-  /** @type {Map<string, { value: string, expiresAt: number | null }>} */
-  const cache = new Map();
-
-  return {
-    async getValue(key) {
-      if (!cache.has(key)) {
-        return null;
-      }
-
-      const entry = cache.get(key);
-      if (!entry) {
-        return null;
-      }
-
-      if (typeof entry.expiresAt === 'number' && Date.now() > entry.expiresAt) {
-        cache.delete(key);
-        return null;
-      }
-
-      return entry.value;
-    },
-    async setValue(key, value, ttlSeconds) {
-      const ttl = typeof ttlSeconds === 'number' && Number.isFinite(ttlSeconds) && ttlSeconds > 0
-        ? ttlSeconds
-        : null;
-      const expiresAt = ttl ? Date.now() + (ttl * 1000) : null;
-      cache.set(key, {
-        value,
-        expiresAt,
-      });
-    },
-    async deleteValue(key) {
-      cache.delete(key);
-    },
-  };
-}
-
 class MangaUpdatesAPIWrapper {
   /**
-   * @param {MangaUpdatesAPIWrapperCtorParams} [params]
+   * @param {object} [params]
    * @param {MangaUpdatesAPISettings | null} [params.apiSettings]
-   * @param {TrackerServiceSettings} [params.serviceSettings]
+   * @param {PluginServiceSettings} [params.serviceSettings]
+   * @param {PluginContextLike | null} [params.context]
    */
   constructor(params = {}) {
     const apiSettings = params && typeof params === 'object' ? params.apiSettings : null;
     const serviceSettings = params && typeof params === 'object' ? params.serviceSettings : null;
-    const onCredentialsRequired = params && typeof params === 'object'
-      ? params.onCredentialsRequired
-      : null;
+    const providedContext = params && typeof params === 'object' ? params.context : null;
     const providedHttpClient = params && typeof params === 'object' ? params.httpClient : null;
-    const providedCacheAdapter = params && typeof params === 'object' ? params.cacheAdapter : null;
 
     this.settings = serviceSettings && typeof serviceSettings === 'object'
       ? serviceSettings
       : {};
     this.apiSettings = apiSettings instanceof MangaUpdatesAPISettings ? apiSettings : null;
-
+    this._context = providedContext && typeof providedContext === 'object' ? providedContext : null;
     this.bearerToken = null;
     this._defaultTokenName = 'session_token';
     this.credentials = null;
-    this.onCredentialsRequired = typeof onCredentialsRequired === 'function'
-      ? onCredentialsRequired
-      : async () => null;
+    this._initialized = false;
     this.httpClient = providedHttpClient && typeof providedHttpClient === 'object'
       ? providedHttpClient
       : createDefaultHttpClient();
-    this.cacheAdapter = providedCacheAdapter && typeof providedCacheAdapter === 'object'
-      ? providedCacheAdapter
-      : createInMemoryCacheAdapter();
 
     this._setupAxiosInterceptor();
   }
@@ -319,9 +268,10 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
-   * @param {MangaUpdatesAPIWrapperInitOptions} [options]
+   * @param {object} [options]
    * @param {MangaUpdatesAPISettings | null} [options.apiSettings]
-   * @param {TrackerServiceSettings} [options.serviceSettings]
+   * @param {PluginServiceSettings} [options.serviceSettings]
+   * @param {PluginContextLike | null} [options.context]
    * @returns {Promise<MangaUpdatesAPIWrapper>}
    */
   static async init(options = {}) {
@@ -343,9 +293,7 @@ class MangaUpdatesAPIWrapper {
     const serviceSettingsFromApiSettings = apiSettings ? apiSettings.toLegacyFormat() : null;
     const serviceSettings = explicitServiceSettings || serviceSettingsFromApiSettings || {};
 
-    const onCredentialsRequired = options && typeof options === 'object' && typeof options.onCredentialsRequired === 'function'
-      ? options.onCredentialsRequired
-      : async () => null;
+    const context = options && typeof options === 'object' ? (options.context || null) : null;
     const directHttpClient = options && typeof options === 'object' && options.httpClient && typeof options.httpClient === 'object'
       ? options.httpClient
       : null;
@@ -353,20 +301,12 @@ class MangaUpdatesAPIWrapper {
       ? options.httpClientFactory
       : null;
     const httpClientFromFactory = !directHttpClient && httpClientFactory ? httpClientFactory() : null;
-    const directCacheAdapter = options && typeof options === 'object' && options.cacheAdapter && typeof options.cacheAdapter === 'object'
-      ? options.cacheAdapter
-      : null;
-    const cacheAdapterFactory = options && typeof options === 'object' && typeof options.cacheAdapterFactory === 'function'
-      ? options.cacheAdapterFactory
-      : null;
-    const cacheAdapterFromFactory = !directCacheAdapter && cacheAdapterFactory ? cacheAdapterFactory() : null;
 
     return new MangaUpdatesAPIWrapper({
       apiSettings,
       serviceSettings,
-      onCredentialsRequired,
+      context,
       httpClient: directHttpClient || httpClientFromFactory || null,
-      cacheAdapter: directCacheAdapter || cacheAdapterFromFactory || null,
     });
   }
 
@@ -377,8 +317,100 @@ class MangaUpdatesAPIWrapper {
     return SERVICE_NAME;
   }
 
+  static get pluginName() { return SERVICE_NAME; }
+
+  /** @returns {string} */
+  get pluginName() { return SERVICE_NAME; }
+
+  /** @returns {string[]} */
+  get pluginType() { return Object.freeze(['tracker']); }
+
+  /** @returns {string[]} */
+  get capabilities() { return Object.freeze(['tracker.search', 'tracker.sync', 'tracker.cover']); }
+
+  /** @returns {string} */
+  get contractVersion() {
+    const { PLUGIN_CONTRACT_VERSION } = require(path.join(__dirname, '..', 'plugindtocontract.cjs'));
+    return PLUGIN_CONTRACT_VERSION;
+  }
+
   /**
-   * @returns {Promise<TrackerCredentials | null>}
+   * @returns {Promise<PluginInitResult>}
+   */
+  async initialize() {
+    this._initialized = true;
+    return { status: 'ok' };
+  }
+
+  /**
+   * @returns {PluginStatus}
+   */
+  getStatus() {
+    return { status: this._initialized ? 'ok' : 'initializing' };
+  }
+
+  /**
+   * @param {PluginCredential} current
+   * @returns {Promise<PluginCredential>}
+   */
+  async refreshCredentials(current) {
+    if (!current || typeof current !== 'object') {
+      throw new Error('(refreshCredentials) current credential is required');
+    }
+    const credentials = { username: current.username || '', password: current.password || '' };
+    const tokenData = await this._fetchNewToken(credentials, { forceRefresh: true });
+    const token = await this._extractToken(tokenData);
+    return {
+      token: token || '',
+      refreshToken: current.refreshToken || null,
+      expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+    };
+  }
+
+  /**
+   * @param {string} query
+   * @returns {Promise<Array<Record<string, unknown>>>}
+   */
+  async search(query) {
+    const q = typeof query === 'string' ? query : '';
+    if (!q.trim()) return [];
+    return this.searchTrackers(q, {});
+  }
+
+  /**
+   * @param {string|number} pluginEntryId
+   * @returns {Promise<Record<string, unknown> | null>}
+   */
+  async pullProgress(pluginEntryId) {
+    return this.getUserProgress(pluginEntryId);
+  }
+
+  /**
+   * @param {string|number} pluginEntryId
+   * @param {PluginProgressDTO} [progress]
+   * @returns {Promise<Record<string, unknown>>}
+   */
+  async pushProgress(pluginEntryId, progress = {}) {
+    return this.setUserProgress(pluginEntryId, progress);
+  }
+
+  /**
+   * @param {string|number} pluginEntryId
+   * @param {{ readingStatus?: string, chapter?: number, volume?: number, rating?: number } | null} [context]
+   * @returns {Promise<{ success: boolean, mode: 'added'|'updated', listId: number|null }>}
+   */
+  async subscribe(pluginEntryId, context) {
+    return this.subscribeToReadingList({
+      seriesId: pluginEntryId,
+      status: context && context.readingStatus ? context.readingStatus : null,
+      chapter: context && typeof context.chapter === 'number' ? context.chapter : undefined,
+      volume: context && typeof context.volume === 'number' ? context.volume : undefined,
+      rating: context && typeof context.rating === 'number' ? context.rating : undefined,
+    });
+  }
+
+  /**
+   * @returns {Promise<PluginCredential | null>}
    */
   async getCredentials() {
     return this.credentials && typeof this.credentials === 'object'
@@ -409,29 +441,18 @@ class MangaUpdatesAPIWrapper {
       return this.bearerToken;
     }
 
-    if (!forceRefresh && this.cacheAdapter) {
-      const cached = await this.cacheAdapter.getValue(cacheKey);
+    const cache = this._context && this._context.cache;
+    if (!forceRefresh && cache) {
+      const cached = await cache.getValue(cacheKey);
       if (cached) {
         this.bearerToken = cached;
         return cached;
       }
     }
 
-    let credentials = await this.getCredentials();
-    if (!credentials && typeof this.onCredentialsRequired === 'function') {
-      const provided = await this.onCredentialsRequired({
-        serviceName: SERVICE_NAME,
-        settings: this.settings,
-      });
-
-      if (provided && typeof provided === 'object') {
-        await this.setCredentials(provided);
-        credentials = provided;
-      }
-    }
-
+    const credentials = await this.getCredentials();
     if (!credentials) {
-      throw new Error('Credentials not found and callback did not provide credentials.');
+      throw new Error('Credentials not found.');
     }
 
     const tokenData = await this._fetchNewToken(credentials, { forceRefresh });
@@ -463,16 +484,17 @@ class MangaUpdatesAPIWrapper {
    * @returns {Promise<boolean>}
    */
   async refresh(value) {
-    if (!this.cacheAdapter) {
+    const cache = this._context && this._context.cache;
+    if (!cache) {
       return Boolean(value);
     }
 
     if (typeof value === 'undefined') {
-      const stored = await this.cacheAdapter.getValue('refresh');
+      const stored = await cache.getValue('refresh');
       return parseBoolean(stored);
     }
 
-    await this.cacheAdapter.setValue('refresh', String(Boolean(value)));
+    await cache.setValue('refresh', String(Boolean(value)));
     return Boolean(value);
   }
 
@@ -493,11 +515,12 @@ class MangaUpdatesAPIWrapper {
    * @returns {Promise<unknown | null>}
    */
   async _getJSONCacheValue(key) {
-    if (!this.cacheAdapter || typeof this.cacheAdapter.getValue !== 'function') {
+    const cache = this._context && this._context.cache;
+    if (!cache || typeof cache.getValue !== 'function') {
       return null;
     }
 
-    const raw = await this.cacheAdapter.getValue(key);
+    const raw = await cache.getValue(key);
     if (!raw) {
       return null;
     }
@@ -516,11 +539,12 @@ class MangaUpdatesAPIWrapper {
    * @returns {Promise<void>}
    */
   async _setJSONCacheValue(key, value, ttlSeconds) {
-    if (!this.cacheAdapter || typeof this.cacheAdapter.setValue !== 'function') {
+    const cache = this._context && this._context.cache;
+    if (!cache || typeof cache.setValue !== 'function') {
       return;
     }
 
-    await this.cacheAdapter.setValue(key, JSON.stringify(value), ttlSeconds);
+    await cache.setValue(key, JSON.stringify(value), ttlSeconds);
   }
 
   /**
@@ -592,8 +616,9 @@ class MangaUpdatesAPIWrapper {
   async _fetchNewToken(credentials, options = {}) {
     const forceRefresh = options && typeof options === 'object' && options.forceRefresh === true;
     const cacheKey = this._getTokenCacheKey();
-    if (!forceRefresh && this.cacheAdapter) {
-      const cachedToken = await this.cacheAdapter.getValue(cacheKey);
+    const cache = this._context && this._context.cache;
+    if (!forceRefresh && cache) {
+      const cachedToken = await cache.getValue(cacheKey);
       if (cachedToken) {
         return {
           session_token: cachedToken,
@@ -653,13 +678,14 @@ class MangaUpdatesAPIWrapper {
    */
   async _cacheToken(tokenData) {
     const token = await this._extractToken(tokenData);
-    if (!token || !this.cacheAdapter) {
+    const cache = this._context && this._context.cache;
+    if (!token || !cache) {
       return;
     }
 
     const cacheKey = this._getTokenCacheKey();
     const ttl = this._getTokenTTL('session_token');
-    await this.cacheAdapter.setValue(cacheKey, token, ttl);
+    await cache.setValue(cacheKey, token, ttl);
     this.bearerToken = token;
   }
 
@@ -945,7 +971,8 @@ class MangaUpdatesAPIWrapper {
       const payload = response && typeof response === 'object' && response.data && typeof response.data === 'object'
         ? response.data
         : null;
-      if (payload && this.cacheAdapter) {
+      const cache = this._context && this._context.cache;
+      if (payload && cache) {
         const ttlCandidate = this._resolveSettingValue('cache.ttl.seriesMetadata');
         const ttl = typeof ttlCandidate === 'number' && Number.isFinite(ttlCandidate) && ttlCandidate > 0
           ? ttlCandidate
@@ -1056,7 +1083,10 @@ class MangaUpdatesAPIWrapper {
     const perpage = typeof payload.perpage === 'number' && Number.isFinite(payload.perpage) && payload.perpage > 0
       ? payload.perpage
       : 10;
-    const cacheKey = `serieSearch%%${toSlug(payload.search)}%%${perpage}`;
+    const searchKeyStr = this._context && this._context.utils
+      ? this._context.utils.sanitizeForSearch(payload.search)
+      : toSlug(payload.search);
+    const cacheKey = `serieSearch%%${searchKeyStr}%%${perpage}`;
 
     const refreshRequired = await this.refresh();
     if (!refreshRequired && useCache) {
@@ -1185,8 +1215,9 @@ class MangaUpdatesAPIWrapper {
         return { status: 400, data: responseData };
       }
 
-      if (this.cacheAdapter && typeof this.cacheAdapter.deleteValue === 'function') {
-        await this.cacheAdapter.deleteValue(`getSerieDetail%%${Number(id)}`);
+      const cacheForDelete = this._context && this._context.cache;
+      if (cacheForDelete && typeof cacheForDelete.deleteValue === 'function') {
+        await cacheForDelete.deleteValue(`getSerieDetail%%${Number(id)}`);
       }
 
       return {
@@ -1256,8 +1287,9 @@ class MangaUpdatesAPIWrapper {
         return { status: 400, data: responseData };
       }
 
-      if (this.cacheAdapter && typeof this.cacheAdapter.deleteValue === 'function') {
-        await this.cacheAdapter.deleteValue(`getSerieDetail%%${Number(id)}`);
+      const cacheForDelete = this._context && this._context.cache;
+      if (cacheForDelete && typeof cacheForDelete.deleteValue === 'function') {
+        await cacheForDelete.deleteValue(`getSerieDetail%%${Number(id)}`);
       }
 
       return {
@@ -1317,8 +1349,9 @@ class MangaUpdatesAPIWrapper {
         return { status: 400, data: responseData };
       }
 
-      if (this.cacheAdapter && typeof this.cacheAdapter.deleteValue === 'function') {
-        await this.cacheAdapter.deleteValue(`getSerieDetail%%${Number(id)}`);
+      const cacheForDelete = this._context && this._context.cache;
+      if (cacheForDelete && typeof cacheForDelete.deleteValue === 'function') {
+        await cacheForDelete.deleteValue(`getSerieDetail%%${Number(id)}`);
       }
 
       return {
@@ -1713,8 +1746,9 @@ class MangaUpdatesAPIWrapper {
       }
     }
 
-    if (this.cacheAdapter && typeof this.cacheAdapter.deleteValue === 'function') {
-      await this.cacheAdapter.deleteValue(`getSeriesListStatus%%${numericSeriesId}`);
+    const cacheAfterSubscribe = this._context && this._context.cache;
+    if (cacheAfterSubscribe && typeof cacheAfterSubscribe.deleteValue === 'function') {
+      await cacheAfterSubscribe.deleteValue(`getSeriesListStatus%%${numericSeriesId}`);
     }
 
     return {
@@ -1821,8 +1855,9 @@ class MangaUpdatesAPIWrapper {
         updatedFields.push('status');
       }
 
-      if (this.cacheAdapter && typeof this.cacheAdapter.deleteValue === 'function') {
-        await this.cacheAdapter.deleteValue(`getSeriesListStatus%%${numericSeriesId}`);
+      const cacheAfterProgress = this._context && this._context.cache;
+      if (cacheAfterProgress && typeof cacheAfterProgress.deleteValue === 'function') {
+        await cacheAfterProgress.deleteValue(`getSeriesListStatus%%${numericSeriesId}`);
       }
     }
 
@@ -2137,8 +2172,9 @@ class MangaUpdatesAPIWrapper {
       /** @type {Buffer | null} */
       let imageBuffer = null;
 
-      if (this.cacheAdapter && typeof this.cacheAdapter.getValue === 'function') {
-        const cached = await this.cacheAdapter.getValue(cacheKey);
+      const cacheForCover = this._context && this._context.cache;
+      if (cacheForCover && typeof cacheForCover.getValue === 'function') {
+        const cached = await cacheForCover.getValue(cacheKey);
         if (typeof cached === 'string' && cached.length > 0) {
           imageBuffer = Buffer.from(cached, 'base64');
         }
@@ -2165,8 +2201,8 @@ class MangaUpdatesAPIWrapper {
           return false;
         }
 
-        if (this.cacheAdapter && typeof this.cacheAdapter.setValue === 'function') {
-          await this.cacheAdapter.setValue(cacheKey, imageBuffer.toString('base64'), 24 * 60 * 60);
+        if (cacheForCover && typeof cacheForCover.setValue === 'function') {
+          await cacheForCover.setValue(cacheKey, imageBuffer.toString('base64'), 24 * 60 * 60);
         }
       }
 

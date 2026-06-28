@@ -76,7 +76,7 @@
     "statusMapping.PLAN_TO_READ": 1,
     "statusMapping.ON_HOLD": 4,
     "statusMapping.DROPPED": 3,
-    "statusMapping.RE_READING": 101,
+    "statusMapping.RE_READING": null,
     "ui.label": "MangaUpdates",
     "ui.icon": "images/manga-updates.svg",
     "ui.credentialsTemplate": [

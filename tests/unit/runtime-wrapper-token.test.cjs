@@ -96,7 +96,7 @@ test('wave2 refresh - defaults to false and persists toggle values', async () =>
       'api.endpoints.login.template': '${baseUrl}/account/login',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
 
   assert.equal(await wrapper.refresh(), false);
@@ -116,7 +116,7 @@ test('wave2 token cache key and ttl - follow mangaupdates session token conventi
       'api.endpoints.login.template': '${baseUrl}/account/login',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
 
   assert.equal(wrapper._getTokenCacheKey(), 'mangaupdates_session_token');
@@ -135,7 +135,7 @@ test('wave2 token extraction and caching - extracts token and writes adapter val
       'api.endpoints.login.template': '${baseUrl}/account/login',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
 
   assert.equal(await wrapper._extractToken({ session_token: 'abc' }), 'abc');
@@ -163,7 +163,7 @@ test('wave2 fetch token - returns cache hit unless forceRefresh is requested', a
       'api.endpoints.login.template': '${baseUrl}/account/login',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
 
   const cached = await wrapper._fetchNewToken({ username: 'u', password: 'p' }, { forceRefresh: false });
@@ -185,7 +185,7 @@ test('wave2 fetch token - missing login config still fails fast', async () => {
       'api.baseUrl': 'https://api.mangaupdates.com/v1',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
 
   await assert.rejects(

@@ -1,22 +1,19 @@
 'use strict';
 
 const path = require('path');
-const { TRACKER_DTO_CONTRACT_VERSION } = require(path.join(__dirname, '..', 'trackerdtocontract.cjs'));
+const { PLUGIN_CONTRACT_VERSION } = require(path.join(__dirname, '..', 'plugindtocontract.cjs'));
 
-/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesRawSearchResponse} MangaUpdatesRawSearchResponse */
-/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesRawEntityResponse} MangaUpdatesRawEntityResponse */
-/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesSeriesDetailDto} MangaUpdatesSeriesDetailDto */
-/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesStatusDto} MangaUpdatesStatusDto */
-/** @typedef {import('../../../../types/trackertypedefs').MangaUpdatesCoverMetadataDto} MangaUpdatesCoverMetadataDto */
+/** @typedef {import('../../../../types/plugintypedefs').PluginSearchResult} PluginSearchResult */
+/** @typedef {import('../../../../types/plugintypedefs').PluginProgressDTO} PluginProgressDTO */
+/** @typedef {import('../../../../types/plugincontexttypedefs').PluginContextLike} PluginContextLike */
 
 class MangaUpdatesTrackerMapper {
   /**
-   * @param {Record<string, unknown> | null} [initContext]
+   * @param {PluginContextLike | null} [context]
    */
-  constructor(initContext = null) {
+  constructor(context = null) {
     this.trackerId = 'mangaupdates';
-    this.dtoContractVersion = TRACKER_DTO_CONTRACT_VERSION;
-    this.initContext = initContext;
+    this._context = context;
   }
 
   /**
@@ -125,8 +122,12 @@ class MangaUpdatesTrackerMapper {
       rowMetadata.matchedTitle,
       title
     );
-    const normalizedTitle = typeof title === 'string' ? title.trim().toLowerCase() : '';
-    const normalizedMatchedTitle = typeof rawMatchedTitle === 'string' ? rawMatchedTitle.trim().toLowerCase() : '';
+    const normalizedTitle = this._context && this._context.utils
+      ? this._context.utils.sanitizeForSearch(typeof title === 'string' ? title : '')
+      : (typeof title === 'string' ? title.trim().toLowerCase() : '');
+    const normalizedMatchedTitle = this._context && this._context.utils
+      ? this._context.utils.sanitizeForSearch(typeof rawMatchedTitle === 'string' ? rawMatchedTitle : '')
+      : (typeof rawMatchedTitle === 'string' ? rawMatchedTitle.trim().toLowerCase() : '');
 
     let classification = 'weak';
     if (rawMatchType === 'exact') {

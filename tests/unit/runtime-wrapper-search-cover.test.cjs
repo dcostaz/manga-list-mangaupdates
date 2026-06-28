@@ -191,7 +191,7 @@ test('wave5 search flow - searchTrackers returns normalized exact match from det
       'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -260,7 +260,7 @@ test('wave5 search flow - searchTrackers returns fuzzy match when exact title is
       'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -307,7 +307,7 @@ test('wave5 search flow - searchTrackersRaw maps transport rows from live search
       'api.endpoints.seriesSearch.template': '${baseUrl}/series/search',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -361,7 +361,7 @@ test('wave5 search flow - searchTrackersRaw prioritizes exact over fuzzy rows', 
       'api.endpoints.seriesSearch.template': '${baseUrl}/series/search',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -426,7 +426,7 @@ test('wave5 search flow - searchTrackersRaw evaluates alias query after weak tit
       'api.endpoints.seriesSearch.template': '${baseUrl}/series/search',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -513,7 +513,7 @@ test('wave5 search flow - searchTrackers prefers highest-score title snapshot wh
       'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -558,7 +558,7 @@ test('wave5 cover flow - searchCovers resolves cover from tracker id detail', as
       'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -632,7 +632,7 @@ test('wave5 cover flow - searchCovers can return fuzzy cover candidate', async (
       'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
     },
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
@@ -668,7 +668,7 @@ test('wave5 cover flow - downloadCover writes file and reuses cache on second re
 
   const wrapper = await MangaUpdatesAPIWrapper.init({
     httpClient: client,
-    cacheAdapter,
+    context: { cache: cacheAdapter, utils: null },
   });
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mangaupdates-wave5-cover-'));
