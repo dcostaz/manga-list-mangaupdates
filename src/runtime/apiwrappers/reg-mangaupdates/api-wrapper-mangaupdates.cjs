@@ -328,6 +328,14 @@ class MangaUpdatesAPIWrapper {
   /** @returns {string[]} */
   get capabilities() { return Object.freeze(['tracker.search', 'tracker.sync', 'tracker.cover', 'localtracker.enrich']); }
 
+  /** Credential fields the host renders in the plugin credential form. */
+  get credentialSchema() {
+    return Object.freeze([
+      { key: 'username', label: 'Username', type: 'text' },
+      { key: 'password', label: 'Password', type: 'password' },
+    ]);
+  }
+
   /** @returns {string} */
   get contractVersion() {
     const { PLUGIN_CONTRACT_VERSION } = require(path.join(__dirname, '..', 'plugindtocontract.cjs'));
