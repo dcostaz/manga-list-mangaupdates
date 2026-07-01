@@ -172,13 +172,24 @@ function createFallbackHttpClient() {
  */
 function createDefaultHttpClient() {
   try {
-    const axiosModule = require('axios');
+    // In the plugin runtime (~/plugins/runtime/...) there is no local node_modules,
+    // so require('axios') fails; fall back to the host app via require.main.
+    let axiosModule = null;
+    try {
+      axiosModule = require('axios');
+    } catch (err) {
+      if (require.main && typeof require.main.require === 'function') {
+        axiosModule = require.main.require('axios');
+      } else {
+        throw err;
+      }
+    }
     const axios = axiosModule && axiosModule.default ? axiosModule.default : axiosModule;
     if (axios && typeof axios.create === 'function') {
       return axios.create();
     }
   } catch (error) {
-    // Fallback is used when axios is not installed in this runtime environment.
+    // Fallback is used when axios cannot be resolved in this runtime environment.
   }
 
   return createFallbackHttpClient();
