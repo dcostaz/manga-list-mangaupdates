@@ -326,7 +326,7 @@ class MangaUpdatesAPIWrapper {
   get pluginType() { return Object.freeze(['tracker']); }
 
   /** @returns {string[]} */
-  get capabilities() { return Object.freeze(['tracker.search', 'tracker.sync', 'tracker.cover']); }
+  get capabilities() { return Object.freeze(['tracker.search', 'tracker.sync', 'tracker.cover', 'localtracker.enrich']); }
 
   /** @returns {string} */
   get contractVersion() {
@@ -1067,6 +1067,67 @@ class MangaUpdatesAPIWrapper {
     } catch (error) {
       return null;
     }
+  }
+
+  // ── localtracker.enrich (MangaUpdates enriches localtracker metadata from its API) ──
+
+  /**
+   * Map a MangaUpdates status string to the PluginLinkContribution seriesStatus enum.
+   * @param {unknown} status
+   * @returns {'ongoing' | 'completed' | 'hiatus' | 'unknown'}
+   */
+  _mapSeriesStatus(status) {
+    const s = typeof status === 'string' ? status.toLowerCase() : '';
+    if (s.includes('complete')) return 'completed';
+    if (s.includes('hiatus')) return 'hiatus';
+    if (s.includes('ongoing') || s.includes('publish')) return 'ongoing';
+    return 'unknown';
+  }
+
+  /**
+   * Build a PluginLinkContribution for a linked MangaUpdates series. Re-fetches
+   * stable metadata (cover, titles, authors, genres, status) from the series
+   * detail endpoint and the canonical series URL.
+   * @param {string} pluginEntryId - MangaUpdates series id
+   * @returns {Promise<import('../../../../types/plugintypedefs').PluginLinkContribution | null>}
+   */
+  async buildLinkContribution(pluginEntryId) {
+    const series = await this.getSeriesById(pluginEntryId, true);
+    if (!series) return null;
+    const md = series.metadata && typeof series.metadata === 'object' ? series.metadata : {};
+
+    let seriesUrl = null;
+    try { seriesUrl = await this.getSeriesUrl(pluginEntryId); } catch { seriesUrl = null; }
+
+    /** @type {import('../../../../types/plugintypedefs').PluginLinkContribution} */
+    const contribution = {
+      pluginEntryId: String(pluginEntryId),
+      syncedAt: new Date().toISOString(),
+      seriesStatus: this._mapSeriesStatus(md.status),
+    };
+    if (series.title) contribution.displayTitle = series.title;
+    if (Array.isArray(series.alternativeTitles) && series.alternativeTitles.length) contribution.altTitles = series.alternativeTitles;
+    if (Array.isArray(md.authors) && md.authors.length) contribution.authors = md.authors;
+    if (Array.isArray(md.genres) && md.genres.length) contribution.genres = md.genres;
+    if (md.description) contribution.description = md.description;
+    if (series.coverUrl) contribution.coverUrl = series.coverUrl;
+    contribution.sourceLinks = seriesUrl
+      ? [{ siteId: SERVICE_NAME, siteLabel: 'MangaUpdates', seriesUrl, isPrimary: true }]
+      : [];
+    return contribution;
+  }
+
+  /**
+   * Same enrichment as buildLinkContribution, resolving the series id from the
+   * supplied LocalTrackerEntry (host passes the linked pluginEntryId).
+   * @param {{ pluginEntryId?: string, plugin_entry_id?: string }} localTrackerEntry
+   * @returns {Promise<import('../../../../types/plugintypedefs').PluginLinkContribution | null>}
+   */
+  async syncEnrichment(localTrackerEntry) {
+    const entry = localTrackerEntry && typeof localTrackerEntry === 'object' ? localTrackerEntry : {};
+    const pluginEntryId = entry.pluginEntryId || entry.plugin_entry_id || null;
+    if (!pluginEntryId) return null;
+    return this.buildLinkContribution(pluginEntryId);
   }
 
   /**

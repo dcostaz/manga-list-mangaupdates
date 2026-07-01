@@ -4,7 +4,7 @@
   "pluginContractVersion": "1.0.0",
   "hostApiVersion": "1.0.0",
   "iconPath": "images/mangaupdates-icon.svg",
-  "capabilities": ["tracker.search", "tracker.sync", "tracker.cover"],
+  "capabilities": ["tracker.search", "tracker.sync", "tracker.cover", "localtracker.enrich"],
   "entrypoints": {
     "pluginModule": "apiwrappers/reg-mangaupdates/plugin-module.cjs",
     "settingsFile": "apiwrappers/reg-mangaupdates/mangaupdates-api-settings.json"
