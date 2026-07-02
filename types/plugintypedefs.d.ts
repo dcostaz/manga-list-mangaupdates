@@ -164,17 +164,25 @@ export interface PluginSourceLink {
   isPrimary: boolean;
 }
 
+// A contributor (author/publisher/etc.) may be a plain name, or a name paired
+// with a source-defined role/type (e.g. 'Author' vs 'Artist', 'Original' vs
+// 'English') — the host renders the type as "Name (Type)" when present.
+export type PluginContributor = string | { name: string; type?: string };
+
 export interface PluginLinkContribution {
   pluginEntryId: string;
   displayTitle?: string;
   altTitles?: string[];
-  authors?: string[];
-  artists?: string[];
+  authors?: PluginContributor[];
+  artists?: PluginContributor[];
   description?: string;
   coverUrl?: string;
   seriesStatus?: 'ongoing' | 'completed' | 'hiatus' | 'unknown';
   genres?: string[];
   tags?: string[];
+  year?: number;
+  seriesType?: string;          // e.g. 'Manga', 'Manhwa', 'Manhua' — source-defined, not an enum
+  publishers?: PluginContributor[];
   sourceLinks?: PluginSourceLink[];
   syncedAt: string;             // ISO timestamp → plugin_references.last_synced
   syncIntervalHint?: number;    // seconds; host may ignore

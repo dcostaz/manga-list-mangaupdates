@@ -217,7 +217,9 @@ class MangaUpdatesAPIWrapper {
     this._defaultTokenName = 'session_token';
     this.credentials = null;
     this._initialized = false;
-    this.httpClient = providedHttpClient && typeof providedHttpClient === 'object'
+    // axios.create() returns a callable function (it supports both instance(config)
+    // and instance.get(url)), so typeof is 'function', not 'object' — accept both.
+    this.httpClient = providedHttpClient && (typeof providedHttpClient === 'object' || typeof providedHttpClient === 'function')
       ? providedHttpClient
       : createDefaultHttpClient();
 
@@ -305,7 +307,9 @@ class MangaUpdatesAPIWrapper {
     const serviceSettings = explicitServiceSettings || serviceSettingsFromApiSettings || {};
 
     const context = options && typeof options === 'object' ? (options.context || null) : null;
-    const directHttpClient = options && typeof options === 'object' && options.httpClient && typeof options.httpClient === 'object'
+    // axios.create() returns a callable function, so typeof is 'function', not 'object'.
+    const directHttpClient = options && typeof options === 'object' && options.httpClient
+      && (typeof options.httpClient === 'object' || typeof options.httpClient === 'function')
       ? options.httpClient
       : null;
     const httpClientFactory = options && typeof options === 'object' && typeof options.httpClientFactory === 'function'
@@ -655,11 +659,19 @@ class MangaUpdatesAPIWrapper {
       throw new Error('(_fetchNewToken) Error: HTTP client is not configured');
     }
 
-    const response = await this.httpClient.put(
-      endpoint,
-      requestPayload,
-      { headers: { 'Content-Type': 'application/json' } },
-    );
+    let response;
+    try {
+      response = await this.httpClient.put(
+        endpoint,
+        requestPayload,
+        { headers: { 'Content-Type': 'application/json' } },
+      );
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(`[mangaupdates] _fetchNewToken: login request to ${endpoint} failed${code ? ` (${code})` : ''}:`, detail);
+      throw error;
+    }
     const responseData = response && typeof response === 'object' ? response.data : null;
     const context = responseData && typeof responseData === 'object' ? responseData.context : null;
     const sessionToken = context && typeof context === 'object' && typeof context.session_token === 'string'
@@ -972,6 +984,7 @@ class MangaUpdatesAPIWrapper {
 
     const bearerToken = await this.getToken();
     if (!bearerToken) {
+      console.error(`[mangaupdates] getSerieDetail(${numericId}): getToken() returned empty — not authenticated, series lookup skipped.`);
       return null;
     }
 
@@ -1059,10 +1072,14 @@ class MangaUpdatesAPIWrapper {
         description: typeof seriesDetail.description === 'string' ? seriesDetail.description : null,
         status: typeof seriesDetail.status === 'string' ? seriesDetail.status : null,
         authors: authors
-          .map((entry) => (entry && typeof entry === 'object' && typeof entry.name === 'string' ? entry.name : null))
+          .map((entry) => (entry && typeof entry === 'object' && typeof entry.name === 'string'
+            ? { name: entry.name, type: typeof entry.type === 'string' ? entry.type : undefined }
+            : null))
           .filter((entry) => entry !== null),
         publishers: publishers
-          .map((entry) => (entry && typeof entry === 'object' && typeof entry.publisher_name === 'string' ? entry.publisher_name : null))
+          .map((entry) => (entry && typeof entry === 'object' && typeof entry.publisher_name === 'string'
+            ? { name: entry.publisher_name, type: typeof entry.type === 'string' ? entry.type : undefined }
+            : null))
           .filter((entry) => entry !== null),
       },
       confidence: 100,
@@ -1084,7 +1101,11 @@ class MangaUpdatesAPIWrapper {
 
       return this._normalizeSeriesData(seriesDetail);
     } catch (error) {
-      return null;
+      // Real failures (network/TLS/auth) must propagate so the host surfaces the
+      // actual cause instead of a generic "no contribution" message; only an
+      // explicit null seriesDetail (not-found/not-authenticated) means "no data".
+      console.error(`[mangaupdates] getSeriesById(${trackerId}) failed:`, error instanceof Error ? error.message : error);
+      throw error;
     }
   }
 
@@ -1130,6 +1151,9 @@ class MangaUpdatesAPIWrapper {
     if (Array.isArray(md.genres) && md.genres.length) contribution.genres = md.genres;
     if (md.description) contribution.description = md.description;
     if (series.coverUrl) contribution.coverUrl = series.coverUrl;
+    if (typeof md.year === 'number' && Number.isFinite(md.year)) contribution.year = md.year;
+    if (typeof md.type === 'string' && md.type) contribution.seriesType = md.type;
+    if (Array.isArray(md.publishers) && md.publishers.length) contribution.publishers = md.publishers;
     contribution.sourceLinks = seriesUrl
       ? [{ siteId: SERVICE_NAME, siteLabel: 'MangaUpdates', seriesUrl, isPrimary: true }]
       : [];
@@ -2934,6 +2958,7 @@ class MangaUpdatesAPIWrapper {
       }
     } catch (error) {
       // Fallback placeholder preserves baseline contract behavior when series detail lookup is unavailable.
+      console.error(`[mangaupdates] getSeriesByIdRaw(${trackerId}) failed:`, error instanceof Error ? error.message : error);
     }
 
     return {
