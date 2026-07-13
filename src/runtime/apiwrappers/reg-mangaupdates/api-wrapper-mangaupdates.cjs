@@ -466,7 +466,7 @@ class MangaUpdatesAPIWrapper {
 
     const cache = this._context && this._context.cache;
     if (!forceRefresh && cache) {
-      const cached = await cache.getValue(cacheKey);
+      const cached = await cache.getValue(cacheKey, { userScoped: true });
       if (cached) {
         this.bearerToken = cached;
         return cached;
@@ -513,11 +513,11 @@ class MangaUpdatesAPIWrapper {
     }
 
     if (typeof value === 'undefined') {
-      const stored = await cache.getValue('refresh');
+      const stored = await cache.getValue('refresh', { userScoped: true });
       return parseBoolean(stored);
     }
 
-    await cache.setValue('refresh', String(Boolean(value)));
+    await cache.setValue('refresh', String(Boolean(value)), undefined, { userScoped: true });
     return Boolean(value);
   }
 
@@ -535,15 +535,16 @@ class MangaUpdatesAPIWrapper {
 
   /**
    * @param {string} key
+   * @param {{ userScoped?: boolean }} [options]
    * @returns {Promise<unknown | null>}
    */
-  async _getJSONCacheValue(key) {
+  async _getJSONCacheValue(key, options = {}) {
     const cache = this._context && this._context.cache;
     if (!cache || typeof cache.getValue !== 'function') {
       return null;
     }
 
-    const raw = await cache.getValue(key);
+    const raw = await cache.getValue(key, options);
     if (!raw) {
       return null;
     }
@@ -559,15 +560,16 @@ class MangaUpdatesAPIWrapper {
    * @param {string} key
    * @param {unknown} value
    * @param {number} ttlSeconds
+   * @param {{ userScoped?: boolean }} [options]
    * @returns {Promise<void>}
    */
-  async _setJSONCacheValue(key, value, ttlSeconds) {
+  async _setJSONCacheValue(key, value, ttlSeconds, options = {}) {
     const cache = this._context && this._context.cache;
     if (!cache || typeof cache.setValue !== 'function') {
       return;
     }
 
-    await cache.setValue(key, JSON.stringify(value), ttlSeconds);
+    await cache.setValue(key, JSON.stringify(value), ttlSeconds, options);
   }
 
   /**
@@ -641,7 +643,7 @@ class MangaUpdatesAPIWrapper {
     const cacheKey = this._getTokenCacheKey();
     const cache = this._context && this._context.cache;
     if (!forceRefresh && cache) {
-      const cachedToken = await cache.getValue(cacheKey);
+      const cachedToken = await cache.getValue(cacheKey, { userScoped: true });
       if (cachedToken) {
         return {
           session_token: cachedToken,
@@ -716,7 +718,7 @@ class MangaUpdatesAPIWrapper {
 
     const cacheKey = this._getTokenCacheKey();
     const ttl = this._getTokenTTL('session_token');
-    await cache.setValue(cacheKey, token, ttl);
+    await cache.setValue(cacheKey, token, ttl, { userScoped: true });
     this.bearerToken = token;
   }
 
@@ -769,7 +771,7 @@ class MangaUpdatesAPIWrapper {
     const refreshRequired = await this.refresh();
     const cacheKey = 'mangaupdates_user_lists';
     if (!refreshRequired) {
-      const cached = await this._getJSONCacheValue(cacheKey);
+      const cached = await this._getJSONCacheValue(cacheKey, { userScoped: true });
       if (Array.isArray(cached)) {
         return cached;
       }
@@ -798,7 +800,7 @@ class MangaUpdatesAPIWrapper {
         ? responseData.results
         : [];
 
-    await this._setJSONCacheValue(cacheKey, lists, 3600);
+    await this._setJSONCacheValue(cacheKey, lists, 3600, { userScoped: true });
 
     if (refreshRequired) {
       await this.refresh(false);
@@ -815,7 +817,7 @@ class MangaUpdatesAPIWrapper {
     const refreshRequired = await this.refresh();
     const cacheKey = `getSeriesListStatus%%${id}`;
     if (!refreshRequired) {
-      const cached = await this._getJSONCacheValue(cacheKey);
+      const cached = await this._getJSONCacheValue(cacheKey, { userScoped: true });
       if (cached && typeof cached === 'object') {
         return /** @type {Record<string, unknown>} */ (cached);
       }
@@ -850,7 +852,7 @@ class MangaUpdatesAPIWrapper {
         : null;
 
       if (payload) {
-        await this._setJSONCacheValue(cacheKey, payload, 3600);
+        await this._setJSONCacheValue(cacheKey, payload, 3600, { userScoped: true });
       }
 
       if (refreshRequired) {
