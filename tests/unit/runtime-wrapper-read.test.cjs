@@ -16,31 +16,37 @@ const MangaUpdatesAPIWrapper = require(path.join(
 ));
 
 /**
+ * Plan-2026Q3-namespacedcacheadapter-user-isolation: captures the full options
+ * argument on every call, not just key/value, so tests can assert
+ * { userScoped: true } is actually passed at each migrated call site.
  * @returns {{
  *   cacheAdapter: {
- *     getValue: (key: string) => Promise<string | null>,
- *     setValue: (key: string, value: string, ttlSeconds?: number) => Promise<void>
+ *     getValue: (key: string, options?: { userScoped?: boolean }) => Promise<string | null>,
+ *     setValue: (key: string, value: string, ttlSeconds?: number, options?: { userScoped?: boolean }) => Promise<void>
  *   },
  *   hooks: {
  *     data: Map<string, string>,
- *     writes: Array<{ key: string, value: string, ttlSeconds: number | undefined }>
+ *     reads: Array<{ key: string, options: { userScoped?: boolean } | undefined }>,
+ *     writes: Array<{ key: string, value: string, ttlSeconds: number | undefined, options: { userScoped?: boolean } | undefined }>
  *   }
  * }}
  */
 function createMockCacheAdapter() {
   const hooks = {
     data: new Map(),
+    reads: [],
     writes: [],
   };
 
   return {
     cacheAdapter: {
-      async getValue(key) {
+      async getValue(key, options) {
+        hooks.reads.push({ key, options });
         return hooks.data.has(key) ? hooks.data.get(key) || null : null;
       },
-      async setValue(key, value, ttlSeconds) {
+      async setValue(key, value, ttlSeconds, options) {
         hooks.data.set(key, value);
-        hooks.writes.push({ key, value, ttlSeconds });
+        hooks.writes.push({ key, value, ttlSeconds, options });
       },
     },
     hooks,
@@ -124,10 +130,12 @@ test('wave3 token flow - getToken uses set credentials and caches token', async 
   assert.equal(token, 'wave3-token');
   assert.equal(httpHooks.putCalls.length, 1);
   assert.equal(cacheHooks.data.get('mangaupdates_session_token'), 'wave3-token');
+  // Plan-2026Q3-namespacedcacheadapter-user-isolation: the token is user-derived.
+  assert.deepEqual(cacheHooks.writes[0].options, { userScoped: true });
 });
 
 test('wave3 read flow - getUserLists reads from endpoint then cache', async () => {
-  const { cacheAdapter } = createMockCacheAdapter();
+  const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
   const { client, hooks: httpHooks } = createMockHttpClient();
 
   httpHooks.getHandler = (url) => {
@@ -158,10 +166,16 @@ test('wave3 read flow - getUserLists reads from endpoint then cache', async () =
   const second = await wrapper.getUserLists();
   assert.equal(second.length, 2);
   assert.equal(httpHooks.getCalls.length, 1);
+
+  // Plan-2026Q3-namespacedcacheadapter-user-isolation: mangaupdates_user_lists is per-user state.
+  const listsWrite = cacheHooks.writes.find((w) => w.key === 'mangaupdates_user_lists');
+  assert.deepEqual(listsWrite?.options, { userScoped: true });
+  const listsRead = cacheHooks.reads.find((r) => r.key === 'mangaupdates_user_lists');
+  assert.deepEqual(listsRead?.options, { userScoped: true });
 });
 
 test('wave3 read flow - getSeriesListStatus returns null on 404', async () => {
-  const { cacheAdapter } = createMockCacheAdapter();
+  const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
   const { client, hooks: httpHooks } = createMockHttpClient();
 
   httpHooks.getHandler = (url) => {
@@ -186,6 +200,10 @@ test('wave3 read flow - getSeriesListStatus returns null on 404', async () => {
 
   const status = await wrapper.getSeriesListStatus(99);
   assert.equal(status, null);
+
+  // Plan-2026Q3-namespacedcacheadapter-user-isolation: getSeriesListStatus%%{id} is per-user state.
+  const statusRead = cacheHooks.reads.find((r) => r.key === 'getSeriesListStatus%%99');
+  assert.deepEqual(statusRead?.options, { userScoped: true });
 });
 
 test('wave3 read flow - getReadingStatusFromListId maps list index to configured status', async () => {
@@ -220,7 +238,7 @@ test('wave3 read flow - getReadingStatusFromListId maps list index to configured
 });
 
 test('wave3 read flow - getUserProgress normalizes chapter, volume, timestamp and status', async () => {
-  const { cacheAdapter } = createMockCacheAdapter();
+  const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
   const { client, hooks: httpHooks } = createMockHttpClient();
 
   httpHooks.getHandler = (url) => {
@@ -268,6 +286,11 @@ test('wave3 read flow - getUserProgress normalizes chapter, volume, timestamp an
   const raw = await wrapper.getUserProgressRaw(42);
   assert.equal(raw.operation, 'getUserProgressRaw');
   assert.equal(raw.payload.chapter, 123);
+
+  // Plan-2026Q3-namespacedcacheadapter-user-isolation: covers getSeriesListStatus's write path
+  // (the 404 test above only covers the read/miss path).
+  const statusWrite = cacheHooks.writes.find((w) => w.key === 'getSeriesListStatus%%42');
+  assert.deepEqual(statusWrite?.options, { userScoped: true });
 });
 
 test('wave3 read flow - getSeriesUrl returns payload url when provided by series lookup', async () => {
