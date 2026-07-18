@@ -10,6 +10,7 @@
     "settingsFile": "apiwrappers/reg-mangaupdates/mangaupdates-api-settings.json"
   },
   "syncOptions": {
+    "searchRequiresAuth": true,
     "statusVocabulary": {
       "READING":      "reading",
       "COMPLETED":    "complete",
