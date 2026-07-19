@@ -1111,6 +1111,54 @@ class MangaUpdatesAPIWrapper {
     }
   }
 
+  // ── plugin.live ──
+
+  /**
+   * @param {string} pluginEntryId
+   * @returns {Promise<import('../../../../types/plugintypedefs').PluginLiveQueryResult>}
+   */
+  async queryLive(pluginEntryId) {
+    let series;
+    try {
+      series = await this.getSeriesById(pluginEntryId, false);
+    } catch (error) {
+      return { status: 'error', message: error instanceof Error ? error.message : String(error), retryable: true };
+    }
+    if (!series) return { status: 'not_found' };
+
+    const md = series.metadata && typeof series.metadata === 'object' ? series.metadata : {};
+    let seriesUrl = null;
+    try { seriesUrl = await this.getSeriesUrl(pluginEntryId); } catch { seriesUrl = null; }
+
+    return {
+      status: 'ok',
+      data: {
+        pluginEntryId: String(pluginEntryId),
+        displayTitle: typeof series.title === 'string' ? series.title : undefined,
+        linkState: 'active',
+        statusLabel: typeof md.status === 'string' ? md.status : undefined,
+        fetchedAt: new Date().toISOString(),
+        sections: [
+          {
+            type: 'stat-grid',
+            label: 'Overview',
+            fields: {
+              'Series status': typeof md.status === 'string' ? md.status : '—',
+              'Type': typeof md.type === 'string' ? md.type : '—',
+              'Year': typeof md.year === 'number' ? md.year : '—',
+              'Alt titles': Array.isArray(series.alternativeTitles) ? series.alternativeTitles.length : 0,
+            },
+          },
+          ...(seriesUrl ? [{
+            type: 'link-list',
+            label: 'Links',
+            links: [{ label: 'MangaUpdates', url: seriesUrl }],
+          }] : []),
+        ],
+      },
+    };
+  }
+
   // ── localtracker.enrich (MangaUpdates enriches localtracker metadata from its API) ──
 
   /**
