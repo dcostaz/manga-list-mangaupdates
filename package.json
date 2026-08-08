@@ -8,7 +8,8 @@
     "build:runtime": "node scripts/build-runtime-plugin-package.cjs",
     "test": "node --test tests/unit/*.test.cjs",
     "test:auth:interactive": "node scripts/run-auth-integration-test.cjs",
-    "test:search:interactive": "node scripts/run-search-integration-test.cjs"
+    "test:search:interactive": "node scripts/run-search-integration-test.cjs",
+    "test:readinglist:interactive": "node scripts/run-readinglist-integration-test.cjs"
   },
   "keywords": [
     "manga",

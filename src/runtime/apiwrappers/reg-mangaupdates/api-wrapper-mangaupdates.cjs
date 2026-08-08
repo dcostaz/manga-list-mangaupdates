@@ -10,6 +10,7 @@ const SERVICE_NAME = 'mangaupdates';
 /** @typedef {import('../../../../types/plugintypedefs').PluginCredential} PluginCredential */
 /** @typedef {import('../../../../types/plugintypedefs').PluginReadingStatus} PluginReadingStatus */
 /** @typedef {import('../../../../types/plugintypedefs').PluginProgressDTO} PluginProgressDTO */
+/** @typedef {import('../../../../types/plugintypedefs').PluginProgressComparisonResult} PluginProgressComparisonResult */
 /** @typedef {import('../../../../types/plugintypedefs').PluginSearchResult} PluginSearchResult */
 /** @typedef {import('../../../../types/plugintypedefs').PluginInitResult} PluginInitResult */
 /** @typedef {import('../../../../types/plugintypedefs').PluginStatus} PluginStatus */
@@ -137,6 +138,14 @@ function calculateTitleSimilarity(expectedTitles, candidateTitles, containmentSc
     hasExactMatch,
     bestSimilarity,
   };
+}
+
+/**
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -415,6 +424,69 @@ class MangaUpdatesAPIWrapper {
    */
   async pushProgress(pluginEntryId, progress = {}) {
     return this.setUserProgress(pluginEntryId, progress);
+  }
+
+  /**
+   * Compare the host's known progress (e.g. a Bookmark) against this
+   * source's own freshly-fetched progress, owning every precision quirk
+   * MangaUpdates itself has so the host never needs source-specific
+   * exception logic (owner correction 2026-07-23).
+   *
+   * Chapter: MangaUpdates' reading-list chapter field is integer-only —
+   * confirmed against the real OpenAPI spec (`ListsSeriesModelV1Status.
+   * chapter` and `ListsSeriesModelUpdateV1.status.chapter` are both
+   * `type: integer`), and against live data (0/1972 fractional chapters
+   * across a real account's full reading list). A host chapter with a
+   * fractional part (e.g. 45.5 for a half/extra chapter) must be compared
+   * on its integer part only, or a fractional-vs-truncated mismatch reads
+   * as a false "ahead"/"behind" — the accepted limitation is to use just
+   * the integer part.
+   *
+   * Rating: both sides are float-capable here (MangaUpdates' own rating
+   * type has no documented integer constraint, unlike MangaDex), so a
+   * direct equality check is safe — no rounding needed.
+   *
+   * Field name note (found 2026-07-23): reads `.status`, not
+   * `PluginProgressDTO`'s declared `.readingStatus` — every real
+   * progress-carrying object this wrapper produces or accepts
+   * (`pullProgress`/`getUserProgress`'s return, `pushProgress`/
+   * `setUserProgress`'s input, `getReadingList()`'s entries) already uses
+   * `.status`; `readingStatus` is only real on the separate
+   * `PluginSubscribeContext` type (`subscribe()`'s own param). Matching the
+   * typedef literally here would have made statusDiffers silently never
+   * fire against real data.
+   * @param {{ status?: string | null, chapter?: number | null, rating?: number | null }} hostProgress
+   * @param {{ status?: string | null, chapter?: number | null, rating?: number | null }} remoteProgress
+   * @returns {PluginProgressComparisonResult}
+   */
+  compareProgress(hostProgress, remoteProgress) {
+    const hp = hostProgress && typeof hostProgress === 'object' ? hostProgress : {};
+    const rp = remoteProgress && typeof remoteProgress === 'object' ? remoteProgress : {};
+
+    /** @type {boolean | null} */
+    let chapterAhead = null;
+    /** @type {boolean | null} */
+    let chapterBehindOrEqual = null;
+    if (typeof hp.chapter === 'number' && typeof rp.chapter === 'number') {
+      const hostWhole = Math.floor(hp.chapter);
+      const remoteWhole = Math.floor(rp.chapter);
+      chapterAhead = remoteWhole > hostWhole;
+      chapterBehindOrEqual = remoteWhole <= hostWhole;
+    }
+
+    /** @type {boolean | null} */
+    let ratingDiffers = null;
+    if (typeof hp.rating === 'number' || typeof rp.rating === 'number') {
+      ratingDiffers = (hp.rating ?? null) !== (rp.rating ?? null);
+    }
+
+    /** @type {boolean | null} */
+    let statusDiffers = null;
+    if (typeof hp.status === 'string' || typeof rp.status === 'string') {
+      statusDiffers = (hp.status ?? null) !== (rp.status ?? null);
+    }
+
+    return { chapterAhead, chapterBehindOrEqual, ratingDiffers, statusDiffers };
   }
 
   /**
@@ -916,6 +988,209 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * Fetch every series entry in one MangaUpdates list (paginated). Ports the
+   * pre-UPS `getListSeries()` implementation's endpoint/pagination/throttle
+   * behavior (`D:\test\cls\mangaupdates.cjs:407-523`) onto this wrapper's
+   * httpClient/cache/settings conventions (the raw axios/Redis calls that
+   * implementation used are gone; the endpoint, pagination, and throttle
+   * logic are unchanged). `list_id` is per-account (from `getUserLists()`),
+   * not a fixed global id — the `/lists/{id}/search` endpoint has no
+   * "every list" form (Investigation §6, `Plan-2026Q3-uniform-plugin-card-badges.md`).
+   * @param {number} listId
+   * @param {{ useCache?: boolean }} [options]
+   * @returns {Promise<MangaUpdatesReadingListSearchResultsEntry[]>}
+   */
+  async getListSeries(listId, options = {}) {
+    const numericListId = Number(listId);
+    if (!Number.isFinite(numericListId)) {
+      return [];
+    }
+
+    const useCache = !(options && typeof options === 'object' && options.useCache === false);
+    const cacheKey = `getListSeries%%${numericListId}`;
+    const refreshRequired = await this.refresh();
+    if (!refreshRequired && useCache) {
+      const cached = await this._getJSONCacheValue(cacheKey, { userScoped: true });
+      if (Array.isArray(cached)) {
+        return cached;
+      }
+    }
+
+    const bearerToken = await this.getToken();
+    if (!bearerToken) {
+      return [];
+    }
+
+    const endpoint = this._resolveEndpoint('api.endpoints.listSearch.template', { list_id: numericListId });
+    if (!endpoint) {
+      throw new Error('(getListSeries) Missing listSearch config');
+    }
+
+    if (!this.httpClient || typeof this.httpClient.post !== 'function') {
+      throw new Error('(getListSeries) HTTP client post method is not configured');
+    }
+
+    const perPageSetting = Number(this._resolveSettingValue('api.endpoints.listSearch.perPage'));
+    const perPage = Number.isFinite(perPageSetting) && perPageSetting > 0 ? perPageSetting : 20;
+    const throttleSetting = Number(this._resolveSettingValue('api.endpoints.listSearch.throttle'));
+    const throttleMs = Number.isFinite(throttleSetting) && throttleSetting >= 0 ? throttleSetting : 500;
+
+    /** @type {MangaUpdatesReadingListSearchResultsEntry[]} */
+    const entries = [];
+    let page = 1;
+    while (true) {
+      const response = await this.httpClient.post(
+        endpoint,
+        { page, perpage: perPage },
+        { headers: { Authorization: `Bearer ${bearerToken}`, 'Content-Type': 'application/json' } },
+      );
+      const responseData = response && typeof response === 'object' ? response.data : null;
+      const results = responseData && typeof responseData === 'object' && Array.isArray(responseData.results)
+        ? responseData.results
+        : [];
+
+      if (results.length === 0) {
+        break;
+      }
+
+      entries.push(...results);
+
+      if (results.length < perPage) {
+        break;
+      }
+
+      page += 1;
+      await wait(throttleMs);
+    }
+
+    if (entries.length > 0) {
+      await this._setJSONCacheValue(cacheKey, entries, 3600, { userScoped: true });
+    }
+    if (refreshRequired) {
+      await this.refresh(false);
+    }
+
+    return entries;
+  }
+
+  /**
+   * Bulk-fetch every entry across every one of the user's MangaUpdates lists —
+   * the plugin-side half of `Plan-2026Q3-plugin-sync-management-modal.md`
+   * Phase 12's `getReadingList()`. One `getListSeries()` call per list_id
+   * `getUserLists()` reports, throttled between lists (no bulk "every list"
+   * endpoint exists). Each entry is tagged with the resolved status of the
+   * list it came from — `getReadingStatusFromListId()` already does this
+   * mapping once per list rather than guessing per entry. `rating` comes
+   * from the same entry's sibling `metadata.user_rating` field (owner
+   * correction, 2026-07-23: an earlier pass here only read the `record`
+   * half of each entry and missed it — verified live against a real
+   * account, `metadata.user_rating` is present per entry, `null` — the
+   * API's own sentinel, not a guessed default — when the user hasn't rated
+   * that series). No extra call needed, unlike MangaDex's separate
+   * `/rating` endpoint.
+   *
+   * Optional `hostProgressByEntryId` (owner direction, 2026-07-23): when
+   * supplied, each returned entry also carries a `comparison` — the same
+   * `compareProgress()` this wrapper already exposes standalone, run once
+   * per entry against the host's own known progress for that reference, so
+   * a bulk pull-review consumer gets classification (chapter-ahead,
+   * rating-differs, status-differs) for free from the one call instead of
+   * looping `compareProgress()` itself. No extra network cost — comparison
+   * is pure computation over data this call already fetched.
+   * @param {{ useCache?: boolean, hostProgressByEntryId?: Map<string, { status?: string | null, chapter?: number | null, rating?: number | null }> }} [options]
+   * @returns {Promise<Array<{
+   *   pluginEntryId: string,
+   *   title: string | null,
+   *   canonicalUrl: string | null,
+   *   status: string,
+   *   rating: number | null,
+   *   chapter: number | null,
+   *   volume: number | null,
+   *   listId: number,
+   *   priority: number | null,
+   *   lastUpdated: string | null,
+   *   comparison: PluginProgressComparisonResult | null
+   * }>>}
+   */
+  async getReadingList(options = {}) {
+    const userLists = await this.getUserLists();
+    if (!Array.isArray(userLists) || userLists.length === 0) {
+      return [];
+    }
+
+    const throttleSetting = Number(this._resolveSettingValue('api.endpoints.listSearch.throttle'));
+    const throttleMs = Number.isFinite(throttleSetting) && throttleSetting >= 0 ? throttleSetting : 500;
+
+    /** @type {Array<Record<string, unknown>>} */
+    const normalized = [];
+    let isFirstList = true;
+    for (const list of userLists) {
+      const listId = list && typeof list === 'object' && typeof list.list_id === 'number' ? list.list_id : null;
+      if (listId === null) {
+        continue;
+      }
+
+      if (!isFirstList) {
+        await wait(throttleMs);
+      }
+      isFirstList = false;
+
+      const status = await this.getReadingStatusFromListId(listId);
+      const entries = await this.getListSeries(listId, options);
+
+      for (const entry of entries) {
+        const record = entry && typeof entry === 'object' && entry.record && typeof entry.record === 'object'
+          ? entry.record
+          : null;
+        if (!record) {
+          continue;
+        }
+
+        const series = record.series && typeof record.series === 'object' ? record.series : {};
+        const statusInfo = record.status && typeof record.status === 'object' ? record.status : {};
+        const timeAdded = record.time_added && typeof record.time_added === 'object' ? record.time_added : null;
+        const metadata = entry && typeof entry === 'object' && entry.metadata && typeof entry.metadata === 'object'
+          ? entry.metadata
+          : null;
+
+        if (typeof series.id === 'undefined' || series.id === null) {
+          continue;
+        }
+
+        normalized.push({
+          pluginEntryId: String(series.id),
+          title: typeof series.title === 'string' ? series.title : null,
+          canonicalUrl: typeof series.url === 'string' ? series.url : null,
+          status,
+          rating: metadata && typeof metadata.user_rating === 'number' ? metadata.user_rating : null,
+          chapter: typeof statusInfo.chapter === 'number' ? statusInfo.chapter : null,
+          volume: typeof statusInfo.volume === 'number' ? statusInfo.volume : null,
+          listId,
+          priority: typeof record.priority === 'number' ? record.priority : null,
+          lastUpdated: timeAdded && typeof timeAdded.timestamp === 'number'
+            ? new Date(timeAdded.timestamp * 1000).toISOString()
+            : null,
+          comparison: /** @type {PluginProgressComparisonResult | null} */ (null),
+        });
+      }
+    }
+
+    const hostProgressByEntryId = options && options.hostProgressByEntryId instanceof Map
+      ? options.hostProgressByEntryId
+      : null;
+    if (hostProgressByEntryId) {
+      for (const entry of normalized) {
+        const hostProgress = hostProgressByEntryId.get(entry.pluginEntryId);
+        if (hostProgress) {
+          entry.comparison = this.compareProgress(hostProgress, entry);
+        }
+      }
+    }
+
+    return normalized;
+  }
+
+  /**
    * @param {string|number} seriesId
    * @returns {Promise<TrackerUserProgress | null>}
    */
@@ -947,6 +1222,22 @@ class MangaUpdatesAPIWrapper {
 
     if (typeof listStatus.list_id === 'number') {
       progress.status = await this.getReadingStatusFromListId(listStatus.list_id);
+    }
+
+    // Owner correction 2026-07-23: pullProgress() must carry rating in line
+    // with getReadingList()'s bulk fetch — the single-item endpoint has no
+    // metadata sibling to read it from for free, so it's a real extra call.
+    // A rating-fetch failure (missing config, transient network error) must
+    // not fail the whole pull over a supplementary field — chapter/volume/
+    // status are the primary payload, matching getReadingStatusFromListId's
+    // own degrade-rather-than-throw precedent in this file.
+    try {
+      const rating = await this.getSerieRating(seriesId);
+      if (typeof rating === 'number') {
+        progress.rating = rating;
+      }
+    } catch (error) {
+      console.warn(`[mangaupdates] getUserProgress(${seriesId}): rating fetch failed, continuing without it:`, error instanceof Error ? error.message : error);
     }
 
     return progress;
@@ -1803,6 +2094,124 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * Read the caller's own rating for one series via `GET /series/{id}/rating`
+   * — the read counterpart of `updateSerieRating()`, same endpoint, verified
+   * live 2026-07-23 against a real account: `{rating, last_updated}` on 200
+   * when rated, a plain 404 when not (mirrors `getSeriesListStatus()`'s own
+   * 404-means-absent handling). Used by `getUserProgress()` to bring the
+   * single-entry pull path in line with `getReadingList()`'s bulk rating
+   * data (that one gets it for free from the list-search response's sibling
+   * `metadata.user_rating`; this single-item endpoint has no such sibling,
+   * confirmed live, so it needs its own call).
+   * @param {string|number} id
+   * @returns {Promise<number | null>}
+   */
+  async getSerieRating(id) {
+    let bearerToken = '';
+    try {
+      bearerToken = await this.getToken();
+    } catch (error) {
+      bearerToken = '';
+    }
+
+    if (!bearerToken) {
+      return null;
+    }
+
+    const endpoint = this._resolveEndpoint('api.endpoints.updateSerieRating.template', {
+      series_id: id,
+    });
+    if (!endpoint) {
+      throw new Error('(getSerieRating) Missing updateSerieRating config');
+    }
+
+    if (!this.httpClient || typeof this.httpClient.get !== 'function') {
+      throw new Error('(getSerieRating) HTTP client get method is not configured');
+    }
+
+    try {
+      const response = await this.httpClient.get(endpoint, {
+        headers: {
+          Authorization: `Bearer ${bearerToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const payload = response && typeof response === 'object' ? response.data : null;
+      return payload && typeof payload === 'object' && typeof payload.rating === 'number'
+        ? payload.rating
+        : null;
+    } catch (error) {
+      const status = error && typeof error === 'object' && error.response && typeof error.response === 'object'
+        ? error.response.status
+        : error && typeof error === 'object' && 'statusCode' in error
+          ? error.statusCode
+          : null;
+      if (status === 404) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * Clear the caller's own rating for a series via `DELETE /series/{id}/rating`
+   * (docs confirm `deleteUserSeriesRating` on the same path family as
+   * `getSerieRating`/`updateSerieRating`). `setUserProgress()` routes here
+   * when it receives `rating: 0` — owner correction 2026-07-23: mangalist's
+   * own Bookmark scale treats 0 as "rating cleared" (`mangalist.cjs`'s
+   * reset-rating flow writes `user_rating: 0`), and while MangaUpdates'
+   * own rating type has no documented lower bound the way MangaDex's
+   * strict 1-10 does, "delete the rating" is still the correct real-API
+   * equivalent of "cleared" — not a literal zero rating.
+   * @param {string|number} id
+   * @returns {Promise<{ status: number, data: unknown }>}
+   */
+  async deleteSerieRating(id) {
+    let bearerToken = '';
+    try {
+      bearerToken = await this.getToken();
+    } catch (error) {
+      bearerToken = '';
+    }
+
+    if (!bearerToken) {
+      return { status: 401, data: { reason: 'Not authenticated' } };
+    }
+
+    const endpoint = this._resolveEndpoint('api.endpoints.updateSerieRating.template', {
+      series_id: id,
+    });
+    if (!endpoint) {
+      throw new Error('(deleteSerieRating) Missing updateSerieRating config');
+    }
+
+    if (!this.httpClient || typeof this.httpClient.delete !== 'function') {
+      throw new Error('(deleteSerieRating) HTTP client delete method is not configured');
+    }
+
+    try {
+      const response = await this.httpClient.delete(endpoint, {
+        headers: { Authorization: `Bearer ${bearerToken}` },
+      });
+
+      return {
+        status: response && typeof response === 'object' && typeof response.status === 'number' ? response.status : 200,
+        data: response && typeof response === 'object' ? response.data : null,
+      };
+    } catch (error) {
+      if (error && typeof error === 'object' && error.response && typeof error.response === 'object') {
+        const status = typeof error.response.status === 'number' ? error.response.status : 500;
+        const data = 'data' in error.response ? error.response.data : null;
+        return { status, data };
+      }
+
+      throw error;
+    }
+  }
+
+  /**
    * @param {{
    *  seriesId: string|number,
    *  status?: TrackerReadingStatus,
@@ -1810,7 +2219,7 @@ class MangaUpdatesAPIWrapper {
    *  volume?: number,
    *  rating?: number,
    * }} subscriptionData
-   * @returns {Promise<{ success: boolean, mode: 'added'|'updated', listId: number|null }>} 
+   * @returns {Promise<{ success: boolean, mode: 'added'|'updated', listId: number|null }>}
    */
   async subscribeToReadingList(subscriptionData) {
     if (!subscriptionData || typeof subscriptionData !== 'object') {
@@ -2016,9 +2425,15 @@ class MangaUpdatesAPIWrapper {
     }
 
     if (typeof progress.rating === 'number' && progress.rating >= 0) {
-      const ratingResult = await this.updateSerieRating(String(numericSeriesId), {
-        rating: Number(progress.rating),
-      });
+      // mangalist's own Bookmark rating scale treats 0 as "cleared"
+      // (mangalist.cjs's reset-rating flow writes user_rating: 0) — route
+      // to delete rather than writing a literal 0 rating (owner correction
+      // 2026-07-23, same fix applied to the MangaDex wrapper for symmetry).
+      const ratingResult = progress.rating === 0
+        ? await this.deleteSerieRating(String(numericSeriesId))
+        : await this.updateSerieRating(String(numericSeriesId), {
+          rating: Number(progress.rating),
+        });
 
       if (ratingResult.status && ratingResult.status >= 400) {
         const errorReason = ratingResult && typeof ratingResult === 'object' && ratingResult.data && typeof ratingResult.data === 'object'

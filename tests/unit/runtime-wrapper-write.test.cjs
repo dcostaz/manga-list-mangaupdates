@@ -462,6 +462,62 @@ test('wave4 write flow - setUserProgress updates list and rating and reports upd
   assert.deepEqual(ratingCall.payload, { rating: 9 });
 });
 
+test('wave4 write flow - deleteSerieRating issues a real DELETE to the rating endpoint', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.putHandler = () => ({ data: { context: { session_token: 'wave4-token' } } });
+  httpHooks.deleteHandler = () => ({ status: 200, data: { result: 'ok' } });
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.updateSerieRating.template': '${baseUrl}/series/${series_id}/rating',
+    },
+    httpClient: client,
+    context: { cache: cacheAdapter, utils: null },
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const result = await wrapper.deleteSerieRating('55');
+  assert.equal(result.status, 200);
+  assert.ok(httpHooks.deleteCalls.some((c) => String(c.url).includes('/series/55/rating')));
+});
+
+test('wave4 write flow - setUserProgress routes rating:0 to deleteSerieRating, not a literal 0 rating write (mangalist\'s 0-means-cleared scale)', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.getHandler = (url) => {
+    if (url.includes('/lists/series/42')) {
+      return { list_id: 10, status: { chapter: 1, volume: 1 } };
+    }
+    return [];
+  };
+  httpHooks.putHandler = () => ({ data: { context: { session_token: 'wave4-token' } } });
+  httpHooks.deleteHandler = () => ({ status: 200, data: { result: 'ok' } });
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.listGetSeriesItem.template': '${baseUrl}/lists/series/${series_id}',
+      'api.endpoints.updateSerieRating.template': '${baseUrl}/series/${series_id}/rating',
+    },
+    httpClient: client,
+    context: { cache: cacheAdapter, utils: null },
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const result = await wrapper.setUserProgress(42, { rating: 0 });
+
+  assert.equal(result.success, true);
+  assert.deepEqual(result.updatedFields, ['rating']);
+  assert.ok(httpHooks.deleteCalls.some((c) => String(c.url).includes('/series/42/rating')), 'expected a DELETE, not a PUT, for rating:0');
+  assert.equal(httpHooks.putCalls.some((c) => String(c.url).includes('/rating')), false);
+});
+
 test('wave4 write flow - subscribeToReadingList adds missing series and applies mapped status list', async () => {
   const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
   const { client, hooks: httpHooks } = createMockHttpClient();

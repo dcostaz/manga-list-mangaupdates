@@ -293,6 +293,113 @@ test('wave3 read flow - getUserProgress normalizes chapter, volume, timestamp an
   assert.deepEqual(statusWrite?.options, { userScoped: true });
 });
 
+test('read flow - getSerieRating returns the rating on 200, null on 404', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.getHandler = (url) => {
+    if (url.includes('/series/7/rating')) {
+      return { rating: 9, last_updated: { timestamp: 1700000000 } };
+    }
+    if (url.includes('/series/8/rating')) {
+      const error = new Error('not found');
+      error.response = { status: 404 };
+      throw error;
+    }
+    return [];
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.updateSerieRating.template': '${baseUrl}/series/${series_id}/rating',
+    },
+    httpClient: client,
+    context: { cache: cacheAdapter, utils: null },
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  assert.equal(await wrapper.getSerieRating(7), 9);
+  assert.equal(await wrapper.getSerieRating(8), null);
+});
+
+test('read flow - getUserProgress includes rating in line with getReadingList(), verified live 2026-07-23', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.getHandler = (url) => {
+    if (url.endsWith('/lists')) {
+      return [{ list_id: 11, name: 'reading' }];
+    }
+    if (url.includes('/lists/series/99')) {
+      return {
+        list_id: 11,
+        status: { chapter: 5, volume: 1 },
+        time_added: { timestamp: 1700000000 },
+      };
+    }
+    if (url.includes('/series/99/rating')) {
+      return { rating: 10, last_updated: { timestamp: 1700000000 } };
+    }
+    return [];
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.getUserLists.template': '${baseUrl}/lists',
+      'api.endpoints.listGetSeriesItem.template': '${baseUrl}/lists/series/${series_id}',
+      'api.endpoints.updateSerieRating.template': '${baseUrl}/series/${series_id}/rating',
+      'statusMapping.READING': 0,
+    },
+    httpClient: client,
+    context: { cache: cacheAdapter, utils: null },
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const progress = await wrapper.getUserProgress(99);
+  assert.equal(progress.rating, 10);
+});
+
+test('read flow - getUserProgress degrades gracefully when the rating endpoint is unconfigured (no crash on the primary chapter/volume/status pull)', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.getHandler = (url) => {
+    if (url.endsWith('/lists')) {
+      return [{ list_id: 11, name: 'reading' }];
+    }
+    if (url.includes('/lists/series/100')) {
+      return {
+        list_id: 11,
+        status: { chapter: 5, volume: 1 },
+        time_added: { timestamp: 1700000000 },
+      };
+    }
+    return [];
+  };
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.getUserLists.template': '${baseUrl}/lists',
+      'api.endpoints.listGetSeriesItem.template': '${baseUrl}/lists/series/${series_id}',
+      // deliberately no updateSerieRating.template configured
+      'statusMapping.READING': 0,
+    },
+    httpClient: client,
+    context: { cache: cacheAdapter, utils: null },
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const progress = await wrapper.getUserProgress(100);
+  assert.equal(progress.chapter, 5);
+  assert.equal('rating' in progress, false);
+});
+
 test('wave3 read flow - getSeriesUrl returns payload url when provided by series lookup', async () => {
   const { cacheAdapter } = createMockCacheAdapter();
   const { client } = createMockHttpClient();
