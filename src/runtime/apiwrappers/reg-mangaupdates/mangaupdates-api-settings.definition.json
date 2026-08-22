@@ -182,6 +182,26 @@
       "category": "performance",
       "order": 770
     },
+    "api.endpoints.listRemoveSeries.template": {
+      "type": "string",
+      "required": true,
+      "default": "${baseUrl}/lists/${list_id}/series/${series_id}",
+      "description": "Endpoint to remove a series from a specific user list",
+      "readOnly": true,
+      "isBasic": false,
+      "category": "network",
+      "order": 263
+    },
+    "api.endpoints.listRemoveSeries.throttle": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Minimum delay between listRemoveSeries requests (milliseconds)",
+      "readOnly": true,
+      "isBasic": false,
+      "category": "performance",
+      "order": 773
+    },
     "api.endpoints.series.template": {
       "type": "string",
       "required": true,
@@ -895,6 +915,16 @@
       "isBasic": false,
       "category": "performance",
       "order": 930
+    },
+    "rateLimit.perEndpoint.listRemoveSeries": {
+      "type": "number",
+      "required": false,
+      "default": 1000,
+      "description": "Delay for listRemoveSeries endpoint (ms)",
+      "readOnly": true,
+      "isBasic": false,
+      "category": "performance",
+      "order": 935
     },
     "rateLimit.perEndpoint.series": {
       "type": "number",

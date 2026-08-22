@@ -1905,6 +1905,129 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * host-capability-contract.md §2's subscribe.remove mapping — real raw call, confirmed against
+   * MangaUpdates' own API docs (https://api.mangaupdates.com/#tag/lists, "Remove series from list").
+   * Modeled directly on deleteSeriesCover()'s/deleteSerieRating()'s existing pattern. Invalidates the
+   * same `getSeriesListStatus%%${seriesId}` cache key subscribeToReadingList()/setUserProgress()
+   * already invalidate on their own list-membership-affecting writes.
+   * @param {number|string} listId
+   * @param {number|string} seriesId
+   * @returns {Promise<{ status: number, data: unknown }>}
+   */
+  async removeSeriesFromList(listId, seriesId) {
+    let bearerToken = '';
+    try {
+      bearerToken = await this.getToken();
+    } catch (error) {
+      bearerToken = '';
+    }
+
+    if (!bearerToken) {
+      return { status: 401, data: { reason: 'Not authenticated' } };
+    }
+
+    const endpoint = this._resolveEndpoint('api.endpoints.listRemoveSeries.template', {
+      list_id: listId,
+      series_id: seriesId,
+    });
+    if (!endpoint) {
+      throw new Error('(removeSeriesFromList) Missing listRemoveSeries config');
+    }
+
+    if (!this.httpClient || typeof this.httpClient.delete !== 'function') {
+      throw new Error('(removeSeriesFromList) HTTP client delete method is not configured');
+    }
+
+    try {
+      const response = await this.httpClient.delete(
+        endpoint,
+        {
+          headers: {
+            Authorization: `Bearer ${bearerToken}`,
+          },
+        },
+      );
+
+      const responseData = response && typeof response === 'object' ? response.data : null;
+      if (responseData && typeof responseData === 'object' && responseData.status === 'EXCEPTION') {
+        return { status: 400, data: responseData };
+      }
+
+      const cacheForRemove = this._context && this._context.cache;
+      if (cacheForRemove && typeof cacheForRemove.deleteValue === 'function') {
+        await cacheForRemove.deleteValue(`getSeriesListStatus%%${Number(seriesId)}`);
+      }
+
+      return {
+        status: response && typeof response === 'object' && typeof response.status === 'number' ? response.status : 200,
+        data: responseData,
+      };
+    } catch (error) {
+      if (error && typeof error === 'object' && error.response && typeof error.response === 'object') {
+        const status = typeof error.response.status === 'number' ? error.response.status : 500;
+        const data = 'data' in error.response ? error.response.data : null;
+        return { status, data };
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * host-capability-contract.md §2's subscribe.remove mapping — one entry's worth of the
+   * array-shaped unsubscribe() below. Two-step: resolve the series' current list_id via the
+   * existing getSeriesListStatus(), then call removeSeriesFromList(). No current membership (a
+   * 404 from getSeriesListStatus, which already returns null for that case) is a no-op success,
+   * not a failure — idempotent removal, matching subscribe()'s own idempotent-add precedent.
+   * @param {string|number} pluginEntryId
+   * @returns {Promise<{ pluginEntryId: string, success: boolean, error?: string }>}
+   * @private
+   */
+  async _unsubscribeOne(pluginEntryId) {
+    try {
+      const seriesId = Number(pluginEntryId);
+      if (!Number.isFinite(seriesId) || seriesId <= 0) {
+        return { pluginEntryId: String(pluginEntryId), success: false, error: '(unsubscribe) Invalid pluginEntryId' };
+      }
+
+      const existingStatus = await this.getSeriesListStatus(seriesId);
+      if (!existingStatus || typeof existingStatus !== 'object' || typeof existingStatus.list_id !== 'number') {
+        return { pluginEntryId: String(pluginEntryId), success: true };
+      }
+
+      const result = await this.removeSeriesFromList(existingStatus.list_id, seriesId);
+      if (result && result.status && result.status >= 400) {
+        const reason = result.data && typeof result.data === 'object' ? result.data.reason : null;
+        return {
+          pluginEntryId: String(pluginEntryId),
+          success: false,
+          error: `(unsubscribe) Failed to remove from reading list: ${typeof reason === 'string' ? reason : 'Unknown error'}`,
+        };
+      }
+
+      return { pluginEntryId: String(pluginEntryId), success: true };
+    } catch (error) {
+      return { pluginEntryId: String(pluginEntryId), success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /**
+   * host-capability-contract.md §2.1 — subscribe.remove's array-shaped unsubscribe(). New this
+   * migration — no prior method or endpoint existed at all. Array in, array out, per-entry failure
+   * — never a whole-batch throw.
+   * @param {string[]} pluginEntryIds
+   * @returns {Promise<Array<{ pluginEntryId: string, success: boolean, error?: string }>>}
+   */
+  async unsubscribe(pluginEntryIds) {
+    const ids = Array.isArray(pluginEntryIds) ? pluginEntryIds : [];
+    const results = [];
+    for (const id of ids) {
+      results.push(await this._unsubscribeOne(id));
+    }
+    return results;
+  }
+
+  /**
    * @param {Record<string, unknown> | Array<Record<string, unknown>>} payload
    * @returns {Promise<{ status: number, data: unknown }>}
    */
