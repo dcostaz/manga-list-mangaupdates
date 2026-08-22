@@ -1,6 +1,5 @@
 'use strict';
 
-const fs = require('fs');
 const path = require('path');
 const MangaUpdatesAPISettings = require(path.join(__dirname, 'api-settings-mangaupdates.cjs'));
 
@@ -350,7 +349,7 @@ class MangaUpdatesAPIWrapper {
   get pluginType() { return Object.freeze(['tracker']); }
 
   /** @returns {string[]} */
-  get capabilities() { return Object.freeze(['tracker.search', 'tracker.sync', 'tracker.cover', 'localtracker.enrich']); }
+  get capabilities() { return Object.freeze(['tracker.search', 'tracker.sync', 'tracker.cover', 'localtracker.enrich', 'plugin.live']); }
 
   /** Credential fields the host renders in the plugin credential form. */
   get credentialSchema() {
@@ -418,12 +417,44 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * host-capability-contract.md §2's sync.push mapping — one entry's worth of the array-shaped
+   * pushProgress() below. Status is no longer accepted here — moved to subscribe.add's own
+   * subscribe() under the new contract (host-capability-contract.md §5.1: status is a
+   * Subscribing-domain fact, not a Syncing one).
    * @param {string|number} pluginEntryId
-   * @param {PluginProgressDTO} [progress]
-   * @returns {Promise<Record<string, unknown>>}
+   * @param {{ chapter?: number, volume?: number, rating?: number }} [progress]
+   * @returns {Promise<{ pluginEntryId: string, success: boolean, updatedFields?: string[], message?: string, error?: string }>}
+   * @private
    */
-  async pushProgress(pluginEntryId, progress = {}) {
-    return this.setUserProgress(pluginEntryId, progress);
+  async _pushProgressOne(pluginEntryId, progress = {}) {
+    try {
+      const result = await this.setUserProgress(pluginEntryId, progress);
+      return { pluginEntryId: String(pluginEntryId), ...result };
+    } catch (error) {
+      return { pluginEntryId: String(pluginEntryId), success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /**
+   * host-capability-contract.md §2.1 — sync.push's array-shaped pushProgress(). Called on every
+   * relevant Bookmark chapter/volume/rating edit, never carrying status (that's pushStatus's own
+   * job under the new contract). MangaUpdates' remote API is per-series only, so the array shape is
+   * realized by looping internally. Array in, array out, per-entry failure — never a whole-batch
+   * throw.
+   * @param {Array<{ pluginEntryId: string, chapter?: number, volume?: number, rating?: number }>} entries
+   * @returns {Promise<Array<{ pluginEntryId: string, success: boolean, updatedFields?: string[], message?: string, error?: string }>>}
+   */
+  async pushProgress(entries) {
+    const list = Array.isArray(entries) ? entries : [];
+    const results = [];
+    for (const entry of list) {
+      results.push(await this._pushProgressOne(entry && entry.pluginEntryId, entry ? {
+        chapter: entry.chapter,
+        volume: entry.volume,
+        rating: entry.rating,
+      } : {}));
+    }
+    return results;
   }
 
   /**
@@ -490,18 +521,50 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * host-capability-contract.md §2's subscribe.add mapping — one entry's worth of the array-shaped
+   * subscribe() below. Reuses the raw API layer's own subscribeToReadingList() (idempotent — it
+   * checks the series' existing list membership and updates rather than duplicating).
    * @param {string|number} pluginEntryId
    * @param {{ readingStatus?: string, chapter?: number, volume?: number, rating?: number } | null} [context]
-   * @returns {Promise<{ success: boolean, mode: 'added'|'updated', listId: number|null }>}
+   * @returns {Promise<{ pluginEntryId: string, success: boolean, mode?: 'added'|'updated', listId?: number|null, error?: string }>}
+   * @private
    */
-  async subscribe(pluginEntryId, context) {
-    return this.subscribeToReadingList({
-      seriesId: pluginEntryId,
-      status: context && context.readingStatus ? context.readingStatus : null,
-      chapter: context && typeof context.chapter === 'number' ? context.chapter : undefined,
-      volume: context && typeof context.volume === 'number' ? context.volume : undefined,
-      rating: context && typeof context.rating === 'number' ? context.rating : undefined,
-    });
+  async _subscribeOne(pluginEntryId, context) {
+    try {
+      const result = await this.subscribeToReadingList({
+        seriesId: pluginEntryId,
+        status: context && context.readingStatus ? context.readingStatus : null,
+        chapter: context && typeof context.chapter === 'number' ? context.chapter : undefined,
+        volume: context && typeof context.volume === 'number' ? context.volume : undefined,
+        rating: context && typeof context.rating === 'number' ? context.rating : undefined,
+      });
+      return { pluginEntryId: String(pluginEntryId), ...result };
+    } catch (error) {
+      return { pluginEntryId: String(pluginEntryId), success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  /**
+   * host-capability-contract.md §2.1 — subscribe.add's array-shaped subscribe(). Called on every
+   * relevant Bookmark status edit under the new contract, not just the initial subscription (status
+   * is a Subscribing-domain fact — §5.1 — not bundled into sync.push's pushProgress anymore).
+   * MangaUpdates' list endpoints are per-series only, so the array shape is realized by looping
+   * internally. Array in, array out, per-entry failure — never a whole-batch throw.
+   * @param {Array<{ pluginEntryId: string, status?: string, chapter?: number, volume?: number, rating?: number }>} entries
+   * @returns {Promise<Array<{ pluginEntryId: string, success: boolean, mode?: 'added'|'updated', listId?: number|null, error?: string }>>}
+   */
+  async subscribe(entries) {
+    const list = Array.isArray(entries) ? entries : [];
+    const results = [];
+    for (const entry of list) {
+      results.push(await this._subscribeOne(entry && entry.pluginEntryId, entry ? {
+        readingStatus: entry.status,
+        chapter: entry.chapter,
+        volume: entry.volume,
+        rating: entry.rating,
+      } : null));
+    }
+    return results;
   }
 
   /**
@@ -1515,6 +1578,33 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * host-capability-contract.md §2.1 — enrich's array-shaped dispatch. Loops over the existing
+   * single-entry buildLinkContribution() (kept unchanged, still used directly by syncEnrichment()) —
+   * no bulk MangaUpdates endpoint exists for this. Array in, array out, per-entry failure — never a
+   * whole-batch throw. A null contribution (entry not found remotely) is reported as a failure, not
+   * a silent success with no data.
+   * @param {string[]} pluginEntryIds
+   * @returns {Promise<Array<{ pluginEntryId: string, success: boolean, contribution?: import('../../../../types/plugintypedefs').PluginLinkContribution, error?: string }>>}
+   */
+  async enrich(pluginEntryIds) {
+    const ids = Array.isArray(pluginEntryIds) ? pluginEntryIds : [];
+    const results = [];
+    for (const id of ids) {
+      try {
+        const contribution = await this.buildLinkContribution(id);
+        if (contribution) {
+          results.push({ pluginEntryId: String(id), success: true, contribution });
+        } else {
+          results.push({ pluginEntryId: String(id), success: false, error: 'No contribution available for this id' });
+        }
+      } catch (error) {
+        results.push({ pluginEntryId: String(id), success: false, error: error instanceof Error ? error.message : String(error) });
+      }
+    }
+    return results;
+  }
+
+  /**
    * @param {{ search?: string, perpage?: number }} payload
    * @param {{ useCache?: boolean }} [options]
    * @returns {Promise<Array<Record<string, unknown>>>}
@@ -2344,33 +2434,13 @@ class MangaUpdatesAPIWrapper {
       };
     }
 
-    const statusMappingResolved = this._resolveSettingValue('statusMapping');
-    /** @type {Record<string, number>} */
-    const statusMapping = statusMappingResolved && typeof statusMappingResolved === 'object'
-      ? { ...statusMappingResolved }
-      : {};
-    /** @type {TrackerReadingStatus[]} */
-    const knownStatuses = ['READING', 'COMPLETED', 'PLAN_TO_READ', 'ON_HOLD', 'DROPPED', 'RE_READING'];
-    for (const status of knownStatuses) {
-      const flatValue = this._resolveSettingValue(`statusMapping.${status}`);
-      if (typeof flatValue === 'number') {
-        statusMapping[status] = flatValue;
-      }
-    }
-
-    const baseListId = existingStatus && typeof existingStatus === 'object' && typeof existingStatus.list_id === 'number'
+    // Status is no longer read here — moved to subscribe()'s own dispatch under the new contract
+    // (host-capability-contract.md §5.1: status is a Subscribing-domain fact, not a Syncing one).
+    // pushProgress now owns chapter/volume/rating only; the series' current list membership is
+    // never changed by this method.
+    const targetListId = existingStatus && typeof existingStatus === 'object' && typeof existingStatus.list_id === 'number'
       ? existingStatus.list_id
       : null;
-    let targetListId = baseListId;
-    let listChanged = false;
-
-    if (progress.status) {
-      const mappedListId = statusMapping[progress.status];
-      if (mappedListId !== undefined && mappedListId !== null && mappedListId !== targetListId) {
-        targetListId = mappedListId;
-        listChanged = true;
-      }
-    }
 
     /** @type {Record<string, number>} */
     const statusPayload = {};
@@ -2384,18 +2454,14 @@ class MangaUpdatesAPIWrapper {
     /** @type {string[]} */
     const updatedFields = [];
     const statusKeys = Object.keys(statusPayload);
-    const needsListUpdate = listChanged || statusKeys.length > 0;
 
-    if (needsListUpdate) {
+    if (statusKeys.length > 0) {
       /** @type {Record<string, unknown>} */
       const listPayload = {
         series: { id: numericSeriesId },
         list_id: targetListId,
+        status: statusPayload,
       };
-
-      if (statusKeys.length > 0) {
-        listPayload.status = statusPayload;
-      }
 
       const updateResult = await this.updateListSeries(listPayload);
       if (updateResult.status && updateResult.status >= 400) {
@@ -2413,9 +2479,6 @@ class MangaUpdatesAPIWrapper {
       }
       if (statusPayload.volume !== undefined) {
         updatedFields.push('volume');
-      }
-      if (listChanged) {
-        updatedFields.push('status');
       }
 
       const cacheAfterProgress = this._context && this._context.cache;
@@ -2720,67 +2783,72 @@ class MangaUpdatesAPIWrapper {
    * @param {string} savePath
    * @returns {Promise<boolean>}
    */
-  async downloadCover(metadata, savePath) {
-    const url = metadata && typeof metadata === 'object' && typeof metadata.url === 'string'
-      ? metadata.url
-      : '';
-    const mangaId = metadata && typeof metadata === 'object' && metadata.mangaId !== undefined
-      ? String(metadata.mangaId)
-      : 'unknown';
-    const fileName = metadata && typeof metadata === 'object' && typeof metadata.fileName === 'string'
-      ? metadata.fileName
-      : 'cover.jpg';
+  /**
+   * host-capability-contract.md §2's enrich.cover mapping. Unlike MangaDex's equivalent, MangaUpdates'
+   * cover URL is CDN-assigned and not deterministically derivable from the series id + filename
+   * alone (confirmed via _extractCoverUrl()'s own candidate list — no fixed URL pattern like
+   * MangaDex's `/covers/{mangaId}/{fileName}`), so this method re-resolves the series detail
+   * (typically a cache hit, since a download normally follows shortly after the searchCovers() call
+   * that surfaced this coverId) and re-extracts the URL the same way searchCovers()'s own id-mode
+   * path already does. This means, unlike MangaDex's downloadCover, this method now requires a
+   * credential (getSerieDetail() calls getToken()) — a real, necessary behavioral difference from
+   * the pre-migration unauthenticated shape, not an oversight.
+   * @param {string} coverId - "${seriesId}/${fileName}", host-constructed per ImageService's own
+   *   bridging convention (not required to be plugin-parseable in general — only the seriesId half
+   *   is actually used to resolve the URL; fileName is reused only for the image-byte cache key,
+   *   matching the pre-migration cache-key scheme).
+   * @returns {Promise<Buffer>}
+   */
+  async downloadCover(coverId) {
+    const parts = typeof coverId === 'string' ? coverId.split('/') : [];
+    const seriesId = parts[0] ? Number(parts[0]) : NaN;
+    if (!Number.isFinite(seriesId) || seriesId <= 0) {
+      throw new Error('(downloadCover) Invalid coverId');
+    }
+    const fileName = parts[1] || 'cover.jpg';
 
-    if (!url || typeof savePath !== 'string' || !savePath.trim()) {
-      return false;
+    const cacheKey = `mangaupdates_downloadCover_${seriesId}_${fileName}`;
+    const cacheForCover = this._context && this._context.cache;
+    if (cacheForCover && typeof cacheForCover.getValue === 'function') {
+      const cached = await cacheForCover.getValue(cacheKey);
+      if (typeof cached === 'string' && cached.length > 0) {
+        return Buffer.from(cached, 'base64');
+      }
     }
 
-    const cacheKey = `mangaupdates_downloadCover_${mangaId}_${fileName}`;
-
-    try {
-      /** @type {Buffer | null} */
-      let imageBuffer = null;
-
-      const cacheForCover = this._context && this._context.cache;
-      if (cacheForCover && typeof cacheForCover.getValue === 'function') {
-        const cached = await cacheForCover.getValue(cacheKey);
-        if (typeof cached === 'string' && cached.length > 0) {
-          imageBuffer = Buffer.from(cached, 'base64');
-        }
-      }
-
-      if (!imageBuffer) {
-        if (!this.httpClient || typeof this.httpClient.get !== 'function') {
-          return false;
-        }
-
-        const response = await this.httpClient.get(url, { responseType: 'arraybuffer' });
-        const responseData = response && typeof response === 'object' ? response.data : null;
-        if (Buffer.isBuffer(responseData)) {
-          imageBuffer = responseData;
-        } else if (responseData instanceof ArrayBuffer) {
-          imageBuffer = Buffer.from(responseData);
-        } else if (ArrayBuffer.isView(responseData)) {
-          imageBuffer = Buffer.from(responseData.buffer);
-        } else if (typeof responseData === 'string') {
-          imageBuffer = Buffer.from(responseData, 'binary');
-        }
-
-        if (!imageBuffer) {
-          return false;
-        }
-
-        if (cacheForCover && typeof cacheForCover.setValue === 'function') {
-          await cacheForCover.setValue(cacheKey, imageBuffer.toString('base64'), 24 * 60 * 60);
-        }
-      }
-
-      await fs.promises.mkdir(path.dirname(savePath), { recursive: true });
-      await fs.promises.writeFile(savePath, imageBuffer);
-      return true;
-    } catch (error) {
-      return false;
+    const detail = await this.getSerieDetail(seriesId, { useCache: true });
+    const url = this._extractCoverUrl(detail);
+    if (!url) {
+      throw new Error('(downloadCover) No cover URL available for this series');
     }
+
+    if (!this.httpClient || typeof this.httpClient.get !== 'function') {
+      throw new Error('(downloadCover) HTTP client get method is not configured');
+    }
+
+    const response = await this.httpClient.get(url, { responseType: 'arraybuffer' });
+    const responseData = response && typeof response === 'object' ? response.data : null;
+    /** @type {Buffer | null} */
+    let imageBuffer = null;
+    if (Buffer.isBuffer(responseData)) {
+      imageBuffer = responseData;
+    } else if (responseData instanceof ArrayBuffer) {
+      imageBuffer = Buffer.from(responseData);
+    } else if (ArrayBuffer.isView(responseData)) {
+      imageBuffer = Buffer.from(responseData.buffer);
+    } else if (typeof responseData === 'string') {
+      imageBuffer = Buffer.from(responseData, 'binary');
+    }
+
+    if (!imageBuffer) {
+      throw new Error('(downloadCover) Failed to fetch cover image bytes');
+    }
+
+    if (cacheForCover && typeof cacheForCover.setValue === 'function') {
+      await cacheForCover.setValue(cacheKey, imageBuffer.toString('base64'), 24 * 60 * 60);
+    }
+
+    return imageBuffer;
   }
 
   /**
@@ -3320,15 +3388,21 @@ class MangaUpdatesAPIWrapper {
       ? Math.max(1, Math.round(context.attempts))
       : 1;
 
+    const fileName = `${toSlug(title) || `series-${seriesId}`}.jpg`;
+
     return {
       source: SERVICE_NAME,
       title,
       thumbnailUrl: coverUrl || '',
       canonicalUrl,
+      // ImageService's own bridging convention (coverId = `${sourceId}/${fileName}`) — matches
+      // MangaDex's own precedent; not yet read by any host call site, added for consistency and the
+      // eventual PluginCoverResult.coverId consumer.
+      coverId: `${seriesId}/${fileName}`,
       tracker: {
         id: seriesId,
         url: coverUrl || '',
-        fileName: `${toSlug(title) || `series-${seriesId}`}.jpg`,
+        fileName,
         description: title,
         score,
         extras: {
