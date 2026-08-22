@@ -1,7 +1,7 @@
 {
   "pluginName": "mangaupdates",
   "pluginType": "tracker",
-  "pluginContractVersion": "1.0.0",
+  "pluginContractVersion": "2.0.0",
   "hostApiVersion": "1.0.0",
   "iconPath": "images/mangaupdates-icon.svg",
   "capabilities": ["tracker.search", "tracker.sync", "tracker.cover", "localtracker.enrich", "plugin.live"],

@@ -38,7 +38,7 @@ test('buildManifest returns plugin loader compatible metadata', () => {
 
 test('exports centralized plugin contract version', () => {
   assert.equal(typeof PLUGIN_CONTRACT_VERSION, 'string');
-  assert.equal(PLUGIN_CONTRACT_VERSION, '1.0.0');
+  assert.equal(PLUGIN_CONTRACT_VERSION, '2.0.0');
 });
 
 test('buildEffectiveSettingsDocument merges definition and values into runtime payload', () => {
