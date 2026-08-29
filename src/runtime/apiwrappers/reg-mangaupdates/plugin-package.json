@@ -1,10 +1,10 @@
 {
   "pluginName": "mangaupdates",
   "pluginType": "tracker",
-  "pluginContractVersion": "1.0.0",
+  "pluginContractVersion": "2.0.0",
   "hostApiVersion": "1.0.0",
   "iconPath": "images/mangaupdates-icon.svg",
-  "capabilities": ["tracker.search", "tracker.sync", "tracker.cover", "localtracker.enrich", "plugin.live"],
+  "capabilities": ["credential", "search.query", "search.lookup", "enrich", "enrich.cover", "sync.pull", "sync.push", "sync.list", "subscribe.add", "subscribe.remove", "plugin.live"],
   "entrypoints": {
     "pluginModule": "apiwrappers/reg-mangaupdates/plugin-module.cjs",
     "settingsFile": "apiwrappers/reg-mangaupdates/mangaupdates-api-settings.json"
@@ -18,6 +18,10 @@
       "ON_HOLD":      "hold",
       "DROPPED":      "dropped",
       "RE_READING":   null
+    },
+    "progressAxes": {
+      "pull": ["chapter", "rating"],
+      "push": ["chapter", "rating"]
     },
     "supportedActions": []
   }

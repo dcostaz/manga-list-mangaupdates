@@ -95,6 +95,23 @@ async function createWrapper(httpClient, cacheAdapter) {
 }
 
 // ---------------------------------------------------------------------------
+// get capabilities() — must match plugin-package.json exactly (the check that
+// would have caught the pre-Phase-2 plugin.live drift earlier)
+// ---------------------------------------------------------------------------
+
+test('capabilities getter matches plugin-package.json exactly', () => {
+  const manifest = require(path.join(
+    __dirname, '..', '..', 'src', 'runtime', 'apiwrappers', 'reg-mangaupdates', 'plugin-package.json',
+  ));
+  const wrapperCapabilities = MangaUpdatesAPIWrapper.prototype
+    ? Object.getOwnPropertyDescriptor(MangaUpdatesAPIWrapper.prototype, 'capabilities').get.call({})
+    : null;
+
+  assert.ok(Array.isArray(wrapperCapabilities));
+  assert.deepEqual([...wrapperCapabilities].sort(), [...manifest.capabilities].sort());
+});
+
+// ---------------------------------------------------------------------------
 // buildLinkContribution() / syncEnrichment() — localtracker.enrich
 // ---------------------------------------------------------------------------
 

@@ -2,9 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const os = require('os');
 const path = require('path');
-const fs = require('fs').promises;
 
 const MangaUpdatesAPIWrapper = require(path.join(
   __dirname,
@@ -128,6 +126,11 @@ function assertCoverSearchContract(cover) {
   assert.equal(cover.tracker.id.length > 0, true);
   assert.equal(typeof cover.tracker?.url, 'string');
   assert.equal(cover.tracker.url.length > 0, true);
+
+  // ImageService's own bridging convention — `${seriesId}/${fileName}`, matching MangaDex's own
+  // precedent (see api-wrapper-mangaupdates.cjs's _normalizeCoverSearchResult).
+  assert.equal(typeof cover.coverId, 'string');
+  assert.equal(cover.coverId, `${cover.tracker.id}/${cover.tracker.fileName}`);
 
   assert.equal(typeof cover.fetchedAt, 'string');
   assert.equal(cover.fetchedAt.length > 0, true);
@@ -650,61 +653,109 @@ test('wave5 cover flow - searchCovers can return fuzzy cover candidate', async (
   assert.equal(covers[0].telemetry.attempts >= 1, true);
 });
 
-test('wave5 cover flow - downloadCover writes file and reuses cache on second request', async () => {
+test('wave5 cover flow - downloadCover(coverId) resolves the URL via getSerieDetail, returns a Buffer, and reuses cache on second request', async () => {
   const { cacheAdapter } = createMockCacheAdapter();
   const { client, hooks: httpHooks } = createMockHttpClient();
 
   const sampleImage = Buffer.from([1, 2, 3, 4, 5]);
   httpHooks.getHandler = (url) => {
-    if (String(url) === 'https://images.example/solo-leveling.jpg') {
+    if (String(url).includes('/series/321')) {
       return {
         status: 200,
-        data: sampleImage,
+        data: {
+          series_id: 321,
+          title: 'Solo Leveling',
+          image: { url: { original: 'https://images.example/solo-leveling.jpg' } },
+        },
       };
+    }
+    if (String(url) === 'https://images.example/solo-leveling.jpg') {
+      return { status: 200, data: sampleImage };
     }
 
     return { status: 404, data: {} };
   };
 
   const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
+    },
+    httpClient: client,
+    context: { cache: cacheAdapter, utils: null },
+  });
+  // Unlike the pre-migration shape (a plain unauthenticated image GET), the new coverId-driven
+  // shape re-resolves the URL via getSerieDetail(), which requires a credential.
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const first = await wrapper.downloadCover('321/solo-leveling.jpg');
+
+  assert.equal(Buffer.isBuffer(first), true);
+  assert.equal(Buffer.compare(first, sampleImage), 0);
+  const imageGetCall = httpHooks.getCalls.find((call) => String(call.url) === 'https://images.example/solo-leveling.jpg');
+  assert.equal(Boolean(imageGetCall), true);
+  const imageGetCallCount = httpHooks.getCalls.filter((call) => String(call.url) === 'https://images.example/solo-leveling.jpg').length;
+  assert.equal(imageGetCallCount, 1);
+
+  httpHooks.getHandler = (url) => {
+    if (String(url) === 'https://images.example/solo-leveling.jpg') {
+      throw new Error('network should not be called when the image cache is warm');
+    }
+    // getSerieDetail's own cache is independently warm too, but even if it weren't, only the
+    // image-byte fetch is asserted never to repeat here.
+    return {
+      status: 200,
+      data: {
+        series_id: 321,
+        title: 'Solo Leveling',
+        image: { url: { original: 'https://images.example/solo-leveling.jpg' } },
+      },
+    };
+  };
+
+  const second = await wrapper.downloadCover('321/solo-leveling.jpg');
+
+  assert.equal(Buffer.isBuffer(second), true);
+  assert.equal(Buffer.compare(second, sampleImage), 0);
+  const imageGetCallCountAfterSecond = httpHooks.getCalls.filter((call) => String(call.url) === 'https://images.example/solo-leveling.jpg').length;
+  assert.equal(imageGetCallCountAfterSecond, 1, 'the image byte fetch must not repeat once cached, same as the pre-migration shape');
+});
+
+test('wave5 cover flow - downloadCover(coverId) rejects a malformed coverId', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client } = createMockHttpClient();
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
     httpClient: client,
     context: { cache: cacheAdapter, utils: null },
   });
 
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mangaupdates-wave5-cover-'));
-  const savePath = path.join(tempDir, 'cover.jpg');
+  await assert.rejects(() => wrapper.downloadCover('not-a-number/cover.jpg'), /Invalid coverId/);
+  await assert.rejects(() => wrapper.downloadCover(''), /Invalid coverId/);
+});
 
-  try {
-    const first = await wrapper.downloadCover(
-      {
-        mangaId: '321',
-        fileName: 'solo-leveling.jpg',
-        url: 'https://images.example/solo-leveling.jpg',
-      },
-      savePath,
-    );
+test('wave5 cover flow - downloadCover(coverId) throws when the series has no resolvable cover URL', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
 
-    assert.equal(first, true);
-    const firstBytes = await fs.readFile(savePath);
-    assert.equal(Buffer.compare(firstBytes, sampleImage), 0);
-    assert.equal(httpHooks.getCalls.length, 1);
+  httpHooks.getHandler = (url) => {
+    if (String(url).includes('/series/321')) {
+      return { status: 200, data: { series_id: 321, title: 'Solo Leveling' } };
+    }
+    return { status: 404, data: {} };
+  };
 
-    httpHooks.getHandler = () => {
-      throw new Error('network should not be called when cache is warm');
-    };
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.series.template': '${baseUrl}/series/${series_id}',
+    },
+    httpClient: client,
+    context: { cache: cacheAdapter, utils: null },
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
-    const second = await wrapper.downloadCover(
-      {
-        mangaId: '321',
-        fileName: 'solo-leveling.jpg',
-        url: 'https://images.example/solo-leveling.jpg',
-      },
-      savePath,
-    );
-
-    assert.equal(second, true);
-    assert.equal(httpHooks.getCalls.length, 1);
-  } finally {
-    await fs.rm(tempDir, { recursive: true, force: true });
-  }
+  await assert.rejects(() => wrapper.downloadCover('321/cover.jpg'), /No cover URL available/);
 });
