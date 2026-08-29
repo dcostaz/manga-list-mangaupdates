@@ -21,7 +21,7 @@ const {
   '..',
   '..',
   'scripts',
-  'build-runtime-tracker-package.cjs',
+  'build-runtime-plugin-package.cjs',
 ));
 
 const shouldSkip = process.env.ENABLE_REAL_SEARCH_TEST !== '1'

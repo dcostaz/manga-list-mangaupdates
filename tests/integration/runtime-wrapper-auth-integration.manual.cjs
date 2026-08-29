@@ -23,7 +23,7 @@ const {
   '..',
   '..',
   'scripts',
-  'build-runtime-tracker-package.cjs',
+  'build-runtime-plugin-package.cjs',
 ));
 
 const isInteractiveTerminal = Boolean(process.stdin.isTTY && process.stdout.isTTY);
