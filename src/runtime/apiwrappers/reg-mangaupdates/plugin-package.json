@@ -19,6 +19,10 @@
       "DROPPED":      "dropped",
       "RE_READING":   null
     },
+    "progressAxes": {
+      "pull": ["chapter", "rating"],
+      "push": ["chapter", "rating"]
+    },
     "supportedActions": []
   }
 }
