@@ -349,7 +349,7 @@ class MangaUpdatesAPIWrapper {
   get pluginType() { return Object.freeze(['tracker']); }
 
   /** @returns {string[]} */
-  get capabilities() { return Object.freeze(['credential', 'search.query', 'search.lookup', 'enrich', 'enrich.cover', 'sync.pull', 'sync.push', 'sync.list', 'subscribe.add', 'subscribe.remove', 'plugin.live']); }
+  get capabilities() { return Object.freeze(['credential', 'search.query', 'search.lookup', 'enrich', 'enrich.cover', 'sync.pull', 'sync.push', 'sync.list', 'subscribe.add', 'subscribe.remove', 'watch.entry', 'watch.list', 'watch.summary']); }
 
   /** Credential fields the host renders in the plugin credential form. */
   get credentialSchema() {
@@ -1465,7 +1465,7 @@ class MangaUpdatesAPIWrapper {
     }
   }
 
-  // ── plugin.live ──
+  // ── watch.entry ──
 
   /**
    * @param {string} pluginEntryId
@@ -1513,7 +1513,59 @@ class MangaUpdatesAPIWrapper {
     };
   }
 
-  // ── localtracker.enrich (MangaUpdates enriches localtracker metadata from its API) ──
+  // ── watch.summary ──
+
+  /**
+   * Current volatile state for a host-named set of already-linked entries, in one batched call
+   * (host-capability-contract.md §2.1: array in, array out, per-entry failure, never a
+   * whole-batch throw). Reuses `getReadingList()` -- there is no bulk-by-id lookup endpoint
+   * here the way MangaDex's `/manga?ids[]=` is (MangaUpdates has no bulk "fetch these specific
+   * series" call); fetching the whole list once and filtering to the requested ids is bounded
+   * by the number of the user's own lists, not by the number of requested ids, which is the
+   * right trade for a card-grid batch.
+   *
+   * - **`success: true` with `linkState: 'error'`** -- this plugin ANSWERED, and the answer is
+   *   "this id isn't on any of the user's lists" (removed, or never added). Mirrors FMD2's own
+   *   `summarizeEntries` convention for the same case.
+   * - **`success: false`** -- this plugin could NOT answer: the list fetch itself failed
+   *   (network, auth). The host keeps each entry's stored badge state.
+   *
+   * @param {string[]} pluginEntryIds
+   * @returns {Promise<Array<{ pluginEntryId: string, success: boolean, summary?: import('../../../../types/plugintypedefs').PluginCardSummary, error?: string }>>}
+   */
+  async summarizeEntries(pluginEntryIds) {
+    if (!Array.isArray(pluginEntryIds) || pluginEntryIds.length === 0) return [];
+
+    const ids = pluginEntryIds.map(String);
+    let entries;
+    try {
+      entries = await this.getReadingList();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Per-entry failure rather than a thrown batch: one failed fetch means every requested id
+      // is unanswerable, reported as such so the host keeps their stored state.
+      return ids.map((id) => ({ pluginEntryId: id, success: false, error: message }));
+    }
+
+    /** @type {Map<string, string>} */
+    const statusById = new Map();
+    for (const entry of entries) {
+      if (entry && typeof entry.pluginEntryId === 'string' && typeof entry.status === 'string') {
+        statusById.set(entry.pluginEntryId, entry.status);
+      }
+    }
+
+    return ids.map((id) => {
+      const status = statusById.get(id);
+      if (!status) {
+        return { pluginEntryId: id, success: true, summary: { linkState: 'error', label: `Entry not found: ${id}` } };
+      }
+      const label = status.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
+      return { pluginEntryId: id, success: true, summary: { linkState: 'active', label } };
+    });
+  }
+
+  // ── enrich (MangaUpdates enriches localtracker metadata from its API) ──
 
   /**
    * Map a MangaUpdates status string to the PluginLinkContribution seriesStatus enum.
