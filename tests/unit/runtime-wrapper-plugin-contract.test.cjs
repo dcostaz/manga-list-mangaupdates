@@ -112,7 +112,7 @@ test('capabilities getter matches plugin-package.json exactly', () => {
 });
 
 // ---------------------------------------------------------------------------
-// buildLinkContribution() / syncEnrichment() — localtracker.enrich
+// buildLinkContribution() / syncEnrichment() — enrich
 // ---------------------------------------------------------------------------
 
 test('buildLinkContribution - full shape with sourceLinks and mapped seriesStatus', async () => {
@@ -215,7 +215,7 @@ test('syncEnrichment - returns null when neither pluginEntryId nor plugin_entry_
 });
 
 // ---------------------------------------------------------------------------
-// pullProgress() — tracker.sync (thin alias over getUserProgress, already
+// pullProgress() — sync.pull (thin alias over getUserProgress, already
 // covered independently in runtime-wrapper-read.test.cjs)
 // ---------------------------------------------------------------------------
 
