@@ -5,6 +5,14 @@ const MangaUpdatesAPISettings = require(path.join(__dirname, 'api-settings-manga
 
 const SERVICE_NAME = 'mangaupdates';
 
+/**
+ * How long `summarizeEntries()` reuses the reading list it fetched. MangaUpdates has no lookup by id, so
+ * each answer costs the whole list (one request per list, throttled, several seconds in all); the host asks
+ * once per batch of cards it shows, so without this every batch pays that again. A minute keeps the badge
+ * state current enough for a card and stops a scroll from fetching the list over and over.
+ */
+const SUMMARY_LIST_TTL_MS = 60_000;
+
 /** @typedef {import('../../../../types/plugintypedefs').PluginServiceSettings} PluginServiceSettings */
 /** @typedef {import('../../../../types/plugintypedefs').PluginCredential} PluginCredential */
 /** @typedef {import('../../../../types/plugintypedefs').PluginReadingStatus} PluginReadingStatus */
@@ -222,6 +230,8 @@ class MangaUpdatesAPIWrapper {
     this.apiSettings = apiSettings instanceof MangaUpdatesAPISettings ? apiSettings : null;
     this._context = providedContext && typeof providedContext === 'object' ? providedContext : null;
     this.bearerToken = null;
+    /** @type {{ at: number, token: string | null, promise: Promise<Array<Record<string, unknown>>> } | null} The reading list `summarizeEntries()` last fetched, shared while it is fresh. */
+    this._summaryListCache = null;
     this._defaultTokenName = 'session_token';
     this.credentials = null;
     this._initialized = false;
@@ -1530,6 +1540,9 @@ class MangaUpdatesAPIWrapper {
    * - **`success: false`** -- this plugin could NOT answer: the list fetch itself failed
    *   (network, auth). The host keeps each entry's stored badge state.
    *
+   * The list is reused for a minute (`SUMMARY_LIST_TTL_MS`) and shared by calls that overlap, so a host
+   * asking once per batch of cards fetches it once, not once per batch.
+   *
    * @param {string[]} pluginEntryIds
    * @returns {Promise<Array<{ pluginEntryId: string, success: boolean, summary?: import('../../../../types/plugintypedefs').PluginCardSummary, error?: string }>>}
    */
@@ -1539,7 +1552,7 @@ class MangaUpdatesAPIWrapper {
     const ids = pluginEntryIds.map(String);
     let entries;
     try {
-      entries = await this.getReadingList();
+      entries = await this._readingListForSummaries();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       // Per-entry failure rather than a thrown batch: one failed fetch means every requested id
@@ -1563,6 +1576,30 @@ class MangaUpdatesAPIWrapper {
       const label = status.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase());
       return { pluginEntryId: id, success: true, summary: { linkState: 'active', label } };
     });
+  }
+
+  /**
+   * The reading list for `summarizeEntries()`, fetched at most once a minute: calls that arrive while it is
+   * being fetched share that fetch, and calls within the minute share its result. A failed fetch is never kept,
+   * and a different session (another sign-in) never reuses a list fetched under the previous one.
+   * @returns {Promise<Array<Record<string, unknown>>>}
+   * @private
+   */
+  _readingListForSummaries() {
+    const now = Date.now();
+    const cached = this._summaryListCache;
+    if (cached && cached.token === this.bearerToken && now - cached.at < SUMMARY_LIST_TTL_MS) {
+      return cached.promise;
+    }
+    const promise = this.getReadingList();
+    const entry = { at: now, token: this.bearerToken, promise };
+    this._summaryListCache = entry;
+    promise.catch(() => {
+      if (this._summaryListCache === entry) {
+        this._summaryListCache = null;
+      }
+    });
+    return promise;
   }
 
   // ── enrich (MangaUpdates enriches localtracker metadata from its API) ──
