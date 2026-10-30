@@ -409,13 +409,71 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * `options.refresh: true` answers from MangaUpdates itself, never from this plugin's cache; an answer that came
+   * from the cache says so (`cached`, and `fetchedAt` when every cached piece of it recorded one).
    * @param {string} query
+   * @param {{ refresh?: boolean }} [options]
    * @returns {Promise<Array<Record<string, unknown>>>}
    */
-  async search(query) {
+  async search(query, options) {
     const q = typeof query === 'string' ? query : '';
     if (!q.trim()) return [];
-    return this.searchTrackers(q, {});
+    return this.searchTrackers(q, options && options.refresh === true ? { useCache: false } : {});
+  }
+
+  /**
+   * Cached answers carry the time they were fetched, so a search can say how old a cached answer is. A value cached
+   * before that was recorded is the bare value and reads as an answer of unknown age.
+   * @param {unknown} value
+   * @returns {{ _v: 2, fetchedAt: string, payload: unknown }}
+   * @private
+   */
+  _stampCacheValue(value) {
+    return { _v: 2, fetchedAt: new Date().toISOString(), payload: value };
+  }
+
+  /**
+   * @param {unknown} raw - what the cache holds
+   * @returns {{ value: unknown, fetchedAt: string | undefined }}
+   * @private
+   */
+  _readCacheValue(raw) {
+    if (raw && typeof raw === 'object' && !Array.isArray(raw) && /** @type {Record<string, unknown>} */ (raw)._v === 2 && 'payload' in raw) {
+      const stamped = /** @type {{ payload: unknown, fetchedAt?: unknown }} */ (raw);
+      return { value: stamped.payload, fetchedAt: typeof stamped.fetchedAt === 'string' ? stamped.fetchedAt : undefined };
+    }
+    return { value: raw, fetchedAt: undefined };
+  }
+
+  /**
+   * Record that part of an answer came from the cache, and when it was fetched.
+   * @param {{ cacheHit?: boolean, fetchedAtMs?: number, ageUnknown?: boolean } | null | undefined} meta
+   * @param {string | undefined} fetchedAt
+   * @private
+   */
+  _noteCacheHit(meta, fetchedAt) {
+    if (!meta) return;
+    meta.cacheHit = true;
+    const time = typeof fetchedAt === 'string' ? Date.parse(fetchedAt) : NaN;
+    if (Number.isFinite(time)) {
+      meta.fetchedAtMs = typeof meta.fetchedAtMs === 'number' ? Math.min(meta.fetchedAtMs, time) : time;
+    } else {
+      meta.ageUnknown = true;
+    }
+  }
+
+  /**
+   * The marks a search result carries when any part of it came from the cache (host-capability-contract §2.4).
+   * @param {{ cacheHit?: boolean, fetchedAtMs?: number, ageUnknown?: boolean } | null | undefined} meta
+   * @returns {{ cached?: true, fetchedAt?: string }}
+   * @private
+   */
+  _cacheMarks(meta) {
+    if (!meta || !meta.cacheHit) return {};
+    return {
+      cached: true,
+      ...(!meta.ageUnknown && typeof meta.fetchedAtMs === 'number' ? { fetchedAt: new Date(meta.fetchedAtMs).toISOString() } : {}),
+    };
   }
 
   /**
@@ -1318,7 +1376,7 @@ class MangaUpdatesAPIWrapper {
 
   /**
    * @param {number} [id]
-   * @param {{ useCache?: boolean }} [options]
+   * @param {{ useCache?: boolean, meta?: { cacheHit?: boolean, fetchedAtMs?: number, ageUnknown?: boolean } }} [options] - `meta` is filled in when the answer comes from the cache
    * @returns {Promise<Record<string, unknown> | null>}
    */
   async getSerieDetail(id = 0, options = {}) {
@@ -1335,8 +1393,9 @@ class MangaUpdatesAPIWrapper {
     const refreshRequired = await this.refresh();
     const cacheKey = `getSerieDetail%%${numericId}`;
     if (!refreshRequired) {
-      const cached = await this._getJSONCacheValue(cacheKey);
+      const { value: cached, fetchedAt } = this._readCacheValue(await this._getJSONCacheValue(cacheKey));
       if (cached && typeof cached === 'object') {
+        this._noteCacheHit(options && options.meta, fetchedAt);
         return /** @type {Record<string, unknown>} */ (cached);
       }
     }
@@ -1375,7 +1434,7 @@ class MangaUpdatesAPIWrapper {
         const ttl = typeof ttlCandidate === 'number' && Number.isFinite(ttlCandidate) && ttlCandidate > 0
           ? ttlCandidate
           : 24 * 60 * 60;
-        await this._setJSONCacheValue(cacheKey, payload, ttl);
+        await this._setJSONCacheValue(cacheKey, this._stampCacheValue(payload), ttl);
       }
 
       if (refreshRequired) {
@@ -1695,7 +1754,7 @@ class MangaUpdatesAPIWrapper {
 
   /**
    * @param {{ search?: string, perpage?: number }} payload
-   * @param {{ useCache?: boolean }} [options]
+   * @param {{ useCache?: boolean, meta?: { cacheHit?: boolean, fetchedAtMs?: number, ageUnknown?: boolean } }} [options] - `meta` is filled in when the answer comes from the cache
    * @returns {Promise<Array<Record<string, unknown>>>}
    */
   async serieSearch(payload, options = {}) {
@@ -1714,8 +1773,9 @@ class MangaUpdatesAPIWrapper {
 
     const refreshRequired = await this.refresh();
     if (!refreshRequired && useCache) {
-      const cached = await this._getJSONCacheValue(cacheKey);
+      const { value: cached, fetchedAt } = this._readCacheValue(await this._getJSONCacheValue(cacheKey));
       if (Array.isArray(cached)) {
+        this._noteCacheHit(options && options.meta, fetchedAt);
         return cached;
       }
     }
@@ -1760,7 +1820,7 @@ class MangaUpdatesAPIWrapper {
       const ttl = typeof ttlCandidate === 'number' && Number.isFinite(ttlCandidate) && ttlCandidate > 0
         ? ttlCandidate
         : 3600;
-      await this._setJSONCacheValue(cacheKey, results, ttl);
+      await this._setJSONCacheValue(cacheKey, this._stampCacheValue(results), ttl);
     }
 
     if (refreshRequired) {
@@ -2750,7 +2810,9 @@ class MangaUpdatesAPIWrapper {
       return [];
     }
 
-    const matchResult = await this._findExactMatch(titles, useCache);
+    /** @type {{ cacheHit?: boolean, fetchedAtMs?: number, ageUnknown?: boolean }} */
+    const meta = {};
+    const matchResult = await this._findExactMatch(titles, useCache, meta);
     if (matchResult.match) {
       const resolvedMatchType = matchResult.matchType === 'fuzzy' ? 'fuzzy' : 'exact';
       const record = matchResult.match && typeof matchResult.match === 'object' && matchResult.match.record
@@ -2762,29 +2824,35 @@ class MangaUpdatesAPIWrapper {
         : NaN;
 
       if (Number.isFinite(seriesId) && seriesId > 0) {
-        const detail = await this.getSerieDetail(seriesId, { useCache });
+        const detail = await this.getSerieDetail(seriesId, { useCache, meta });
         if (detail && typeof detail === 'object') {
           const normalized = this._normalizeSeriesData(detail);
           return [{
             ...normalized,
             matchType: resolvedMatchType,
             confidence: resolvedMatchType === 'exact' ? 100 : 80,
+            ...this._cacheMarks(meta),
           }];
         }
       }
 
-      return [this._mapSearchResult(matchResult.match, resolvedMatchType)];
+      return [{ ...this._mapSearchResult(matchResult.match, resolvedMatchType), ...this._cacheMarks(meta) }];
     }
 
+    // The exact-match pass found nothing to show, so what it read from the cache is not part of this answer.
+    delete meta.cacheHit;
+    delete meta.fetchedAtMs;
+    delete meta.ageUnknown;
     const bestSnapshot = await this._selectBestSearchSnapshot(titles, {
       useCache,
       perpage: 5,
       limit: 5,
       stopOnExact: true,
+      meta,
     });
 
     if (bestSnapshot && Array.isArray(bestSnapshot.rows) && bestSnapshot.rows.length > 0) {
-      return bestSnapshot.rows.map((entry) => this._mapSearchResult(entry.result, 'manual'));
+      return bestSnapshot.rows.map((entry) => ({ ...this._mapSearchResult(entry.result, 'manual'), ...this._cacheMarks(meta) }));
     }
 
     return [];
@@ -3066,6 +3134,7 @@ class MangaUpdatesAPIWrapper {
   /**
    * @param {string[]} titles
    * @param {boolean} [useCache]
+   * @param {{ cacheHit?: boolean, fetchedAtMs?: number, ageUnknown?: boolean }} [meta] - filled in when the answer comes from the cache
    * @returns {Promise<{
    *  match: Record<string, unknown> | null,
    *  attempts: number,
@@ -3074,7 +3143,7 @@ class MangaUpdatesAPIWrapper {
    *  similarity: number,
    * }>}
    */
-  async _findExactMatch(titles, useCache = true) {
+  async _findExactMatch(titles, useCache = true, meta) {
     if (!Array.isArray(titles) || titles.length === 0) {
       return {
         match: null,
@@ -3094,6 +3163,7 @@ class MangaUpdatesAPIWrapper {
       perpage: 25,
       limit: 25,
       stopOnExact: true,
+      meta,
     });
 
     if (!useCache) {
@@ -3133,7 +3203,7 @@ class MangaUpdatesAPIWrapper {
    * Evaluate all candidate query titles and retain the best-ranked snapshot.
    * Stops early only when an exact (100%) match appears.
    * @param {string[]} titles
-   * @param {{ useCache: boolean, perpage: number, limit: number, stopOnExact?: boolean }} options
+   * @param {{ useCache: boolean, perpage: number, limit: number, stopOnExact?: boolean, meta?: { cacheHit?: boolean, fetchedAtMs?: number, ageUnknown?: boolean } }} options - `meta` is filled in when a search comes from the cache
    * @returns {Promise<{
    *  title: string,
    *  rows: Array<{ result: Record<string, unknown>, matchType: 'exact'|'fuzzy'|'search', similarity: number, index: number }>,
@@ -3182,7 +3252,7 @@ class MangaUpdatesAPIWrapper {
           type: ['manga', 'manhua', 'manhwa'],
           perpage,
         },
-        { useCache: options?.useCache !== false },
+        { useCache: options?.useCache !== false, meta: options?.meta },
       );
 
       if (!Array.isArray(searchResults) || searchResults.length === 0) {
