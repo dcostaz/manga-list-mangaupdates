@@ -155,7 +155,8 @@ test('wave2 token extraction and caching - extracts token and writes adapter val
   await wrapper._cacheToken({ session_token: 'cached-token' });
   assert.equal(hooks.writes.length, 1);
   assert.deepEqual(hooks.writes[0], {
-    key: 'mangaupdates_session_token',
+    // No credential applied yet: keyed by the empty credential's identity.
+    key: `mangaupdates_session_token:${wrapper._credentialIdentity(null)}`,
     value: 'cached-token',
     ttlSeconds: 43200,
     options: { userScoped: true },
@@ -167,8 +168,6 @@ test('wave2 fetch token - returns cache hit unless forceRefresh is requested', a
   const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
   const { client, hooks: httpHooks } = createMockHttpClient();
 
-  cacheHooks.data.set('mangaupdates_session_token', 'from-cache');
-
   const wrapper = await MangaUpdatesAPIWrapper.init({
     serviceSettings: {
       'api.baseUrl': 'https://api.mangaupdates.com/v1',
@@ -177,6 +176,7 @@ test('wave2 fetch token - returns cache hit unless forceRefresh is requested', a
     httpClient: client,
     context: { cache: cacheAdapter, utils: null },
   });
+  cacheHooks.data.set(wrapper._getTokenCacheKey(undefined, wrapper._credentialIdentity({ username: 'u' })), 'from-cache');
 
   const cached = await wrapper._fetchNewToken({ username: 'u', password: 'p' }, { forceRefresh: false });
   assert.deepEqual(cached, { session_token: 'from-cache' });
@@ -205,4 +205,111 @@ test('wave2 fetch token - missing login config still fails fast', async () => {
     async () => wrapper._fetchNewToken({ username: 'u', password: 'p' }, { forceRefresh: true }),
     /Missing login config/,
   );
+});
+/**
+ * An axios-shaped client whose response interceptor really runs, so the 401 replay can be tested.
+ * `get` answers from `getHandler`; `request(config)` replays through the same handler.
+ */
+function createInterceptingHttpClient() {
+  const hooks = { putCalls: [], getCalls: [], issued: 0, getHandler: () => ({ data: {} }) };
+  let onRejected = null;
+  const run = async (config) => {
+    hooks.getCalls.push({ url: config.url, authorization: config.headers.Authorization });
+    try {
+      return await hooks.getHandler(config);
+    } catch (error) {
+      error.config = config;
+      return onRejected ? onRejected(error) : Promise.reject(error);
+    }
+  };
+  const client = {
+    interceptors: { response: { use(_ok, rejected) { onRejected = rejected; return 0; } } },
+    async put(url, payload) {
+      hooks.putCalls.push({ url, payload });
+      hooks.issued += 1;
+      return { data: { context: { session_token: `session-${hooks.issued}` } } };
+    },
+    async get(url, options = {}) {
+      return run({ url, headers: { ...(options.headers || {}) } });
+    },
+    async request(config) {
+      return run(config);
+    },
+  };
+  return { client, hooks };
+}
+
+function unauthorized() {
+  const error = new Error('Request failed with status code 401');
+  // @ts-ignore axios-shaped error
+  error.response = { status: 401, headers: {}, data: {} };
+  return error;
+}
+
+async function createTokenWrapper(client, cacheAdapter) {
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+    },
+    httpClient: client,
+    context: { cache: cacheAdapter, utils: null },
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+  return wrapper;
+}
+
+test('token expiry - an expired in-memory session token is never reused', async () => {
+  const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
+  const { client, hooks } = createInterceptingHttpClient();
+  const wrapper = await createTokenWrapper(client, cacheAdapter);
+
+  assert.equal(await wrapper.getToken(), 'session-1');
+  wrapper._bearerExpiresAt = Date.now() - 1;
+  cacheHooks.data.clear();
+
+  assert.equal(await wrapper.getToken(), 'session-2');
+  assert.equal(hooks.putCalls.length, 2);
+});
+
+test('token identity - a different credential never gets the previous credential\'s token', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks } = createInterceptingHttpClient();
+  const wrapper = await createTokenWrapper(client, cacheAdapter);
+
+  assert.equal(await wrapper.getToken(), 'session-1');
+  await wrapper.setCredentials({ username: 'system', password: 'pw' });
+  assert.equal(wrapper.bearerToken, null, 'switching credential drops the in-memory token');
+  assert.equal(await wrapper.getToken(), 'session-2');
+
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+  assert.equal(await wrapper.getToken(), 'session-1', 'its own token comes back from its own cache key');
+  assert.equal(hooks.putCalls.length, 2);
+});
+
+test('401 replay - an authenticated request that gets a 401 signs in again and replays once', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks } = createInterceptingHttpClient();
+  const wrapper = await createTokenWrapper(client, cacheAdapter);
+  hooks.getHandler = (config) => {
+    if (config.headers.Authorization === 'Bearer session-1') throw unauthorized();
+    return { data: { ok: true } };
+  };
+
+  const token = await wrapper.getToken();
+  const response = await client.get('https://api.mangaupdates.com/v1/lists', { headers: { Authorization: `Bearer ${token}` } });
+
+  assert.deepEqual(response.data, { ok: true });
+  assert.deepEqual(hooks.getCalls.map((c) => c.authorization), ['Bearer session-1', 'Bearer session-2']);
+});
+
+test('401 replay - a second 401 is returned, never looped', async () => {
+  const { cacheAdapter } = createMockCacheAdapter();
+  const { client, hooks } = createInterceptingHttpClient();
+  const wrapper = await createTokenWrapper(client, cacheAdapter);
+  hooks.getHandler = () => { throw unauthorized(); };
+
+  const token = await wrapper.getToken();
+  await assert.rejects(client.get('https://api.mangaupdates.com/v1/lists', { headers: { Authorization: `Bearer ${token}` } }), /401/);
+  assert.equal(hooks.getCalls.length, 2);
 });

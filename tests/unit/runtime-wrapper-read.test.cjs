@@ -129,7 +129,8 @@ test('wave3 token flow - getToken uses set credentials and caches token', async 
   const token = await wrapper.getToken();
   assert.equal(token, 'wave3-token');
   assert.equal(httpHooks.putCalls.length, 1);
-  assert.equal(cacheHooks.data.get('mangaupdates_session_token'), 'wave3-token');
+  // The cache key carries the identity of the credential the token was issued for.
+  assert.equal(cacheHooks.data.get(wrapper._getTokenCacheKey(undefined, wrapper._credentialIdentity({ username: 'demo' }))), 'wave3-token');
   // Plan-2026Q3-namespacedcacheadapter-user-isolation: the token is user-derived.
   assert.deepEqual(cacheHooks.writes[0].options, { userScoped: true });
 });

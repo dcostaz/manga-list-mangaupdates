@@ -1,9 +1,15 @@
 'use strict';
 
+const crypto = require('crypto');
 const path = require('path');
 const MangaUpdatesAPISettings = require(path.join(__dirname, 'api-settings-mangaupdates.cjs'));
 
 const SERVICE_NAME = 'mangaupdates';
+// A fetched session token is retired this long before its TTL, so a request never leaves with one
+// that expires in flight.
+const TOKEN_EXPIRY_SKEW_MS = 60 * 1000;
+// A token read back from the cache has an unknown age; hold it in memory only this long.
+const CACHED_TOKEN_HOLD_MS = 60 * 1000;
 
 /**
  * How long `summarizeEntries()` reuses the reading list it fetched. MangaUpdates has no lookup by id, so
@@ -230,6 +236,9 @@ class MangaUpdatesAPIWrapper {
     this.apiSettings = apiSettings instanceof MangaUpdatesAPISettings ? apiSettings : null;
     this._context = providedContext && typeof providedContext === 'object' ? providedContext : null;
     this.bearerToken = null;
+    /** @type {string | null} _credentialIdentity() of the credential `bearerToken` was issued for. */
+    this._bearerIdentity = null;
+    this._bearerExpiresAt = 0;
     /** @type {{ at: number, token: string | null, promise: Promise<Array<Record<string, unknown>>> } | null} The reading list `summarizeEntries()` last fetched, shared while it is fresh. */
     this._summaryListCache = null;
     this._defaultTokenName = 'session_token';
@@ -270,6 +279,24 @@ class MangaUpdatesAPIWrapper {
 
         if (!response) {
           return Promise.reject(error);
+        }
+
+        // A 401 on an authenticated request means the session died early (revoked, or expired
+        // sooner than its TTL): drop it, sign in again and replay the request once.
+        const config = error.config;
+        const authorization = config && config.headers ? String(config.headers.Authorization || '') : '';
+        if (response.status === 401 && authorization.startsWith('Bearer ') && !config._authRetried
+          && typeof this.httpClient.request === 'function') {
+          config._authRetried = true;
+          return this._invalidateToken(authorization.slice('Bearer '.length))
+            .then(() => this.getToken(true))
+            .then((token) => {
+              if (!token) {
+                return Promise.reject(error);
+              }
+              config.headers.Authorization = `Bearer ${token}`;
+              return this.httpClient.request(config);
+            });
         }
 
         const headers = response.headers && typeof response.headers === 'object' ? response.headers : {};
@@ -653,32 +680,63 @@ class MangaUpdatesAPIWrapper {
       throw new Error('Credentials must be an object.');
     }
 
+    if (this.bearerToken && this._bearerIdentity !== this._credentialIdentity(credentials)) {
+      this._holdToken(null, null, 0);
+    }
     this.credentials = { ...credentials };
     return { ...this.credentials };
   }
 
   /**
+   * Short, stable id for the credential the host last applied — the token belongs to that
+   * credential, not to the instance. The host re-applies the system or the user credential before
+   * each operation (manga-list-plugins-boundry-surface.md §1.3), so keying the token by it means a
+   * system-side call can never send a user-side token, nor the reverse.
+   * @param {TrackerCredentials | PluginCredential | null} credentials
+   * @returns {string}
+   */
+  _credentialIdentity(credentials) {
+    const username = (credentials && credentials.username) || '';
+    return crypto.createHash('sha256').update(String(username)).digest('hex').slice(0, 12);
+  }
+
+  /**
+   * @param {string | null} identity
+   * @param {string | null} token
+   * @param {number} lifetimeMs
+   * @returns {void}
+   */
+  _holdToken(identity, token, lifetimeMs) {
+    this.bearerToken = token;
+    this._bearerIdentity = identity;
+    this._bearerExpiresAt = token ? Date.now() + lifetimeMs : 0;
+  }
+
+  /**
+   * Returns a session token for the credential applied right now. The in-memory copy is used only
+   * while it belongs to that credential and hasn't expired: a fetched token lives its TTL less a
+   * skew, a token read back from the cache (age unknown) at most CACHED_TOKEN_HOLD_MS.
    * @param {boolean} [forceRefresh]
    * @returns {Promise<string>}
    */
   async getToken(forceRefresh = false) {
-    const cacheKey = this._getTokenCacheKey();
-    if (!forceRefresh && this.bearerToken) {
+    const credentials = await this.getCredentials();
+    if (!credentials) {
+      throw new Error('Credentials not found.');
+    }
+
+    const identity = this._credentialIdentity(credentials);
+    if (!forceRefresh && this.bearerToken && this._bearerIdentity === identity && this._bearerExpiresAt > Date.now()) {
       return this.bearerToken;
     }
 
     const cache = this._context && this._context.cache;
     if (!forceRefresh && cache) {
-      const cached = await cache.getValue(cacheKey, { userScoped: true });
+      const cached = await cache.getValue(this._getTokenCacheKey(undefined, identity), { userScoped: true });
       if (cached) {
-        this.bearerToken = cached;
+        this._holdToken(identity, cached, CACHED_TOKEN_HOLD_MS);
         return cached;
       }
-    }
-
-    const credentials = await this.getCredentials();
-    if (!credentials) {
-      throw new Error('Credentials not found.');
     }
 
     const tokenData = await this._fetchNewToken(credentials, { forceRefresh });
@@ -687,9 +745,23 @@ class MangaUpdatesAPIWrapper {
       return '';
     }
 
-    await this._cacheToken(tokenData);
-    this.bearerToken = token;
+    await this._cacheToken(tokenData, identity);
     return token;
+  }
+
+  /**
+   * @param {string} token - the token that was rejected
+   * @returns {Promise<void>}
+   */
+  async _invalidateToken(token) {
+    if (this.bearerToken === token) {
+      this._holdToken(null, null, 0);
+    }
+    const credentials = await this.getCredentials();
+    const cache = this._context && this._context.cache;
+    if (credentials && cache && typeof cache.deleteValue === 'function') {
+      await cache.deleteValue(this._getTokenCacheKey(undefined, this._credentialIdentity(credentials)), { userScoped: true });
+    }
   }
 
   /**
@@ -727,13 +799,14 @@ class MangaUpdatesAPIWrapper {
   /**
    * @protected
    * @param {string} [overrideTokenName]
+   * @param {string} [identity] - _credentialIdentity() of the credential the token belongs to
    * @returns {string}
    */
-  _getTokenCacheKey(overrideTokenName) {
+  _getTokenCacheKey(overrideTokenName, identity) {
     const tokenName = typeof overrideTokenName === 'string' && overrideTokenName
       ? overrideTokenName
       : this._defaultTokenName;
-    return `${SERVICE_NAME}_${tokenName}`;
+    return identity ? `${SERVICE_NAME}_${tokenName}:${identity}` : `${SERVICE_NAME}_${tokenName}`;
   }
 
   /**
@@ -843,7 +916,7 @@ class MangaUpdatesAPIWrapper {
    */
   async _fetchNewToken(credentials, options = {}) {
     const forceRefresh = options && typeof options === 'object' && options.forceRefresh === true;
-    const cacheKey = this._getTokenCacheKey();
+    const cacheKey = this._getTokenCacheKey(undefined, this._credentialIdentity(credentials));
     const cache = this._context && this._context.cache;
     if (!forceRefresh && cache) {
       const cachedToken = await cache.getValue(cacheKey, { userScoped: true });
@@ -908,21 +981,28 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * Holds the token in memory for its TTL less a skew and caches it under the identity of the
+   * credential it was issued for.
    * @protected
    * @param {MangaUpdatesTokenResponse} tokenData
+   * @param {string} [identity] - _credentialIdentity() of that credential; defaults to the one applied now
    * @returns {Promise<void>}
    */
-  async _cacheToken(tokenData) {
+  async _cacheToken(tokenData, identity) {
     const token = await this._extractToken(tokenData);
-    const cache = this._context && this._context.cache;
-    if (!token || !cache) {
+    if (!token) {
       return;
     }
 
-    const cacheKey = this._getTokenCacheKey();
+    const resolvedIdentity = identity || this._credentialIdentity(this.credentials);
     const ttl = this._getTokenTTL('session_token');
-    await cache.setValue(cacheKey, token, ttl, { userScoped: true });
-    this.bearerToken = token;
+    this._holdToken(resolvedIdentity, token, (ttl * 1000) - TOKEN_EXPIRY_SKEW_MS);
+
+    const cache = this._context && this._context.cache;
+    if (!cache) {
+      return;
+    }
+    await cache.setValue(this._getTokenCacheKey(undefined, resolvedIdentity), token, ttl, { userScoped: true });
   }
 
   /**
