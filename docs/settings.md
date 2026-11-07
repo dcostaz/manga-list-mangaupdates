@@ -57,6 +57,7 @@ All `api.*` keys are locked (`readOnly=true`, `isBasic=false`, `category=network
 | `api.endpoints.listGetSeriesItem.template` | `${baseUrl}/lists/series/${series_id}?unrenderedFields=true` | 240 | Get series status on user's list |
 | `api.endpoints.listUpdateSeries.template` | `${baseUrl}/lists/series/update` | 250 | Update series on user's list |
 | `api.endpoints.listAddSeries.template` | `${baseUrl}/lists/series` | 260 | Add series to user's list |
+| `api.endpoints.listRemoveSeries.template` | `${baseUrl}/lists/series/delete` | 263 | Remove series from the user's lists |
 | `api.endpoints.series.template` | `${baseUrl}/series/${series_id}` | 270 | Get full series details by ID |
 | `api.endpoints.seriesSearch.template` | `${baseUrl}/series/search` | 280 | Search for series by title/metadata |
 | `api.endpoints.seriesImage.template` | `${baseUrl}/series/${series_id}/image` | 285 | Upload or remove series cover image |

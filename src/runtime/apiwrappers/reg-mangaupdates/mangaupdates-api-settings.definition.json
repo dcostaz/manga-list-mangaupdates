@@ -185,8 +185,8 @@
     "api.endpoints.listRemoveSeries.template": {
       "type": "string",
       "required": true,
-      "default": "${baseUrl}/lists/${list_id}/series/${series_id}",
-      "description": "Endpoint to remove a series from a specific user list",
+      "default": "${baseUrl}/lists/series/delete",
+      "description": "Endpoint to remove series from the user's lists",
       "readOnly": true,
       "isBasic": false,
       "category": "network",

@@ -2134,16 +2134,15 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
-   * host-capability-contract.md §2's subscribe.remove mapping — real raw call, confirmed against
-   * MangaUpdates' own API docs (https://api.mangaupdates.com/#tag/lists, "Remove series from list").
-   * Modeled directly on deleteSeriesCover()'s/deleteSerieRating()'s existing pattern. Invalidates the
-   * same `getSeriesListStatus%%${seriesId}` cache key subscribeToReadingList()/setUserProgress()
-   * already invalidate on their own list-membership-affecting writes.
-   * @param {number|string} listId
+   * host-capability-contract.md §2's subscribe.remove mapping — `POST /lists/series/delete` with an
+   * array of series ids (MangaUpdates' openapi.yaml, operationId deleteListSeries): the site works
+   * out the list itself. Invalidates the same `getSeriesListStatus%%${seriesId}` cache key
+   * subscribeToReadingList()/setUserProgress() already invalidate on their own
+   * list-membership-affecting writes.
    * @param {number|string} seriesId
    * @returns {Promise<{ status: number, data: unknown }>}
    */
-  async removeSeriesFromList(listId, seriesId) {
+  async removeSeriesFromList(seriesId) {
     let bearerToken = '';
     try {
       bearerToken = await this.getToken();
@@ -2155,36 +2154,35 @@ class MangaUpdatesAPIWrapper {
       return { status: 401, data: { reason: 'Not authenticated' } };
     }
 
-    const endpoint = this._resolveEndpoint('api.endpoints.listRemoveSeries.template', {
-      list_id: listId,
-      series_id: seriesId,
-    });
+    const endpoint = this._resolveEndpoint('api.endpoints.listRemoveSeries.template');
     if (!endpoint) {
       throw new Error('(removeSeriesFromList) Missing listRemoveSeries config');
     }
 
-    if (!this.httpClient || typeof this.httpClient.delete !== 'function') {
-      throw new Error('(removeSeriesFromList) HTTP client delete method is not configured');
+    if (!this.httpClient || typeof this.httpClient.post !== 'function') {
+      throw new Error('(removeSeriesFromList) HTTP client post method is not configured');
     }
 
     try {
-      const response = await this.httpClient.delete(
+      const response = await this.httpClient.post(
         endpoint,
+        [Number(seriesId)],
         {
           headers: {
             Authorization: `Bearer ${bearerToken}`,
+            'Content-Type': 'application/json',
           },
         },
       );
 
       const responseData = response && typeof response === 'object' ? response.data : null;
-      if (responseData && typeof responseData === 'object' && responseData.status === 'EXCEPTION') {
+      if (responseData && typeof responseData === 'object' && String(responseData.status).toLowerCase() === 'exception') {
         return { status: 400, data: responseData };
       }
 
       const cacheForRemove = this._context && this._context.cache;
       if (cacheForRemove && typeof cacheForRemove.deleteValue === 'function') {
-        await cacheForRemove.deleteValue(`getSeriesListStatus%%${Number(seriesId)}`);
+        await cacheForRemove.deleteValue(`getSeriesListStatus%%${Number(seriesId)}`, { userScoped: true });
       }
 
       return {
@@ -2224,7 +2222,7 @@ class MangaUpdatesAPIWrapper {
         return { pluginEntryId: String(pluginEntryId), success: true };
       }
 
-      const result = await this.removeSeriesFromList(existingStatus.list_id, seriesId);
+      const result = await this.removeSeriesFromList(seriesId);
       if (result && result.status && result.status >= 400) {
         const reason = result.data && typeof result.data === 'object' ? result.data.reason : null;
         return {
@@ -2753,7 +2751,7 @@ class MangaUpdatesAPIWrapper {
 
     const cacheAfterSubscribe = this._context && this._context.cache;
     if (cacheAfterSubscribe && typeof cacheAfterSubscribe.deleteValue === 'function') {
-      await cacheAfterSubscribe.deleteValue(`getSeriesListStatus%%${numericSeriesId}`);
+      await cacheAfterSubscribe.deleteValue(`getSeriesListStatus%%${numericSeriesId}`, { userScoped: true });
     }
 
     return {
@@ -2835,7 +2833,7 @@ class MangaUpdatesAPIWrapper {
 
       const cacheAfterProgress = this._context && this._context.cache;
       if (cacheAfterProgress && typeof cacheAfterProgress.deleteValue === 'function') {
-        await cacheAfterProgress.deleteValue(`getSeriesListStatus%%${numericSeriesId}`);
+        await cacheAfterProgress.deleteValue(`getSeriesListStatus%%${numericSeriesId}`, { userScoped: true });
       }
     }
 

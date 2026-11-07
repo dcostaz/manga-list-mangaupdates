@@ -24,6 +24,7 @@ const MangaUpdatesAPIWrapper = require(path.join(
  *   hooks: {
  *     data: Map<string, string>,
  *     deletedKeys: string[],
+ *     userScopedDeletes: string[],
  *   }
  * }}
  */
@@ -31,6 +32,7 @@ function createMockCacheAdapter() {
   const hooks = {
     data: new Map(),
     deletedKeys: [],
+    userScopedDeletes: [],
   };
 
   return {
@@ -41,8 +43,9 @@ function createMockCacheAdapter() {
       async setValue(key, value) {
         hooks.data.set(key, value);
       },
-      async deleteValue(key) {
+      async deleteValue(key, options) {
         hooks.deletedKeys.push(key);
+        if (options && options.userScoped) hooks.userScopedDeletes.push(key);
         hooks.data.delete(key);
       },
     },
@@ -448,6 +451,7 @@ test('wave4 write flow - setUserProgress updates chapter/volume/rating and ignor
   assert.deepEqual(result.updatedFields, ['chapter', 'volume', 'rating']);
   assert.match(result.message, /Updated chapter, volume, rating/);
   assert.equal(cacheHooks.deletedKeys.includes('getSeriesListStatus%%42'), true);
+  assert.equal(cacheHooks.userScopedDeletes.includes('getSeriesListStatus%%42'), true);
 
   const listUpdateCall = httpHooks.postCalls.find((call) => String(call.url).includes('/lists/series/update'));
   assert.equal(Boolean(listUpdateCall), true);
@@ -593,6 +597,7 @@ test('wave4 write flow - subscribeToReadingList adds missing series and applies 
   const ratingCall = httpHooks.putCalls.find((call) => String(call.url).includes('/rating'));
   assert.equal(Boolean(ratingCall), true);
   assert.equal(cacheHooks.deletedKeys.includes('getSeriesListStatus%%61'), true);
+  assert.equal(cacheHooks.userScopedDeletes.includes('getSeriesListStatus%%61'), true);
 });
 
 test('wave4 write flow - subscribeToReadingList updates existing series and tolerates rating failure', async () => {
@@ -664,6 +669,7 @@ test('wave4 write flow - subscribeToReadingList updates existing series and tole
     },
   });
   assert.equal(cacheHooks.deletedKeys.includes('getSeriesListStatus%%62'), true);
+  assert.equal(cacheHooks.userScopedDeletes.includes('getSeriesListStatus%%62'), true);
 });
 
 test('wave4 write flow - updateSeries patches series payload and invalidates detail cache', async () => {
@@ -955,37 +961,58 @@ test('wave6 array dispatch - enrich(pluginEntryIds) is array-shaped, wraps build
 // this migration — no prior method or endpoint existed at all)
 // ---------------------------------------------------------------------------
 
-test('wave7 subscribe.remove - removeSeriesFromList issues a real DELETE to the confirmed endpoint and invalidates the list-status cache', async () => {
+test('wave7 subscribe.remove - removeSeriesFromList posts the series id to the documented endpoint and invalidates the list-status cache', async () => {
   const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
   const { client, hooks: httpHooks } = createMockHttpClient();
 
   httpHooks.putHandler = () => ({ data: { context: { session_token: 'wave7-token' } } });
-  httpHooks.deleteHandler = (url) => {
-    if (url.includes('/lists/10/series/101')) {
-      return { status: 200, data: { result: 'ok' } };
-    }
-    return { status: 404, data: { reason: 'not found' } };
-  };
+  httpHooks.postHandler = () => ({ status: 200, data: { status: 'success', reason: 'Series removed' } });
 
   const wrapper = await MangaUpdatesAPIWrapper.init({
     serviceSettings: {
       'api.baseUrl': 'https://api.mangaupdates.com/v1',
       'api.endpoints.login.template': '${baseUrl}/account/login',
-      'api.endpoints.listRemoveSeries.template': '${baseUrl}/lists/${list_id}/series/${series_id}',
+      'api.endpoints.listRemoveSeries.template': '${baseUrl}/lists/series/delete',
     },
     httpClient: client,
     context: { cache: cacheAdapter, utils: null },
   });
   await wrapper.setCredentials({ username: 'demo', password: 'secret' });
 
-  const result = await wrapper.removeSeriesFromList(10, 101);
+  const result = await wrapper.removeSeriesFromList('101');
 
   assert.equal(result.status, 200);
-  assert.ok(httpHooks.deleteCalls.some((c) => String(c.url).includes('/lists/10/series/101')));
-  assert.equal(cacheHooks.deletedKeys.includes('getSeriesListStatus%%101'), true);
+  const call = httpHooks.postCalls.find((c) => String(c.url).endsWith('/lists/series/delete'));
+  assert.deepEqual(call.payload, [101]);
+  assert.equal(httpHooks.deleteCalls.length, 0);
+  assert.equal(cacheHooks.userScopedDeletes.includes('getSeriesListStatus%%101'), true);
 });
 
-test('wave7 subscribe.remove - unsubscribe(entries) resolves the current list_id first, then removes, array in/array out', async () => {
+test('wave7 subscribe.remove - an "exception" reply from the site is a refusal, whatever its case', async () => {
+  const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
+  const { client, hooks: httpHooks } = createMockHttpClient();
+
+  httpHooks.putHandler = () => ({ data: { context: { session_token: 'wave7-token' } } });
+  httpHooks.postHandler = () => ({ status: 200, data: { status: 'exception', reason: 'Series not on any list' } });
+
+  const wrapper = await MangaUpdatesAPIWrapper.init({
+    serviceSettings: {
+      'api.baseUrl': 'https://api.mangaupdates.com/v1',
+      'api.endpoints.login.template': '${baseUrl}/account/login',
+      'api.endpoints.listRemoveSeries.template': '${baseUrl}/lists/series/delete',
+    },
+    httpClient: client,
+    context: { cache: cacheAdapter, utils: null },
+  });
+  await wrapper.setCredentials({ username: 'demo', password: 'secret' });
+
+  const result = await wrapper.removeSeriesFromList(101);
+
+  assert.equal(result.status, 400);
+  assert.equal(cacheHooks.userScopedDeletes.length, 0);
+});
+
+test('wave7 subscribe.remove - unsubscribe(entries) checks the series is on a list first, then removes, array in/array out', async () => {
   const { cacheAdapter } = createMockCacheAdapter();
   const { client, hooks: httpHooks } = createMockHttpClient();
 
@@ -996,19 +1023,14 @@ test('wave7 subscribe.remove - unsubscribe(entries) resolves the current list_id
     return [];
   };
   httpHooks.putHandler = () => ({ data: { context: { session_token: 'wave7-token' } } });
-  httpHooks.deleteHandler = (url) => {
-    if (url.includes('/lists/10/series/201')) {
-      return { status: 200, data: { result: 'ok' } };
-    }
-    return { status: 404, data: {} };
-  };
+  httpHooks.postHandler = () => ({ status: 200, data: { status: 'success', reason: 'Series removed' } });
 
   const wrapper = await MangaUpdatesAPIWrapper.init({
     serviceSettings: {
       'api.baseUrl': 'https://api.mangaupdates.com/v1',
       'api.endpoints.login.template': '${baseUrl}/account/login',
       'api.endpoints.listGetSeriesItem.template': '${baseUrl}/lists/series/${series_id}',
-      'api.endpoints.listRemoveSeries.template': '${baseUrl}/lists/${list_id}/series/${series_id}',
+      'api.endpoints.listRemoveSeries.template': '${baseUrl}/lists/series/delete',
     },
     httpClient: client,
     context: { cache: cacheAdapter, utils: null },
@@ -1020,7 +1042,7 @@ test('wave7 subscribe.remove - unsubscribe(entries) resolves the current list_id
   assert.equal(results.length, 1);
   assert.equal(results[0].pluginEntryId, '201');
   assert.equal(results[0].success, true);
-  assert.ok(httpHooks.deleteCalls.some((c) => String(c.url).includes('/lists/10/series/201')));
+  assert.deepEqual(httpHooks.postCalls.find((c) => String(c.url).endsWith('/lists/series/delete')).payload, [201]);
 });
 
 test('wave7 subscribe.remove - unsubscribe(entries) is idempotent: an entry with no current list membership is a no-op success, not a failure', async () => {
@@ -1036,8 +1058,11 @@ test('wave7 subscribe.remove - unsubscribe(entries) is idempotent: an entry with
     return [];
   };
   httpHooks.putHandler = () => ({ data: { context: { session_token: 'wave7-token' } } });
-  httpHooks.deleteHandler = () => {
-    throw new Error('DELETE should never be called for an entry with no current list membership');
+  httpHooks.postHandler = (url) => {
+    if (String(url).endsWith('/lists/series/delete')) {
+      throw new Error('the removal should never be sent for an entry with no current list membership');
+    }
+    return { status: 200, data: {} };
   };
 
   const wrapper = await MangaUpdatesAPIWrapper.init({
@@ -1045,7 +1070,7 @@ test('wave7 subscribe.remove - unsubscribe(entries) is idempotent: an entry with
       'api.baseUrl': 'https://api.mangaupdates.com/v1',
       'api.endpoints.login.template': '${baseUrl}/account/login',
       'api.endpoints.listGetSeriesItem.template': '${baseUrl}/lists/series/${series_id}',
-      'api.endpoints.listRemoveSeries.template': '${baseUrl}/lists/${list_id}/series/${series_id}',
+      'api.endpoints.listRemoveSeries.template': '${baseUrl}/lists/series/delete',
     },
     httpClient: client,
     context: { cache: cacheAdapter, utils: null },
@@ -1057,10 +1082,10 @@ test('wave7 subscribe.remove - unsubscribe(entries) is idempotent: an entry with
   assert.equal(results.length, 1);
   assert.equal(results[0].pluginEntryId, '202');
   assert.equal(results[0].success, true);
-  assert.equal(httpHooks.deleteCalls.length, 0);
+  assert.equal(httpHooks.postCalls.filter((c) => String(c.url).endsWith('/lists/series/delete')).length, 0);
 });
 
-test('wave7 subscribe.remove - unsubscribe(entries) reports one entry\'s DELETE failure without aborting the batch', async () => {
+test('wave7 subscribe.remove - unsubscribe(entries) reports one entry\'s failure without aborting the batch', async () => {
   const { cacheAdapter } = createMockCacheAdapter();
   const { client, hooks: httpHooks } = createMockHttpClient();
 
@@ -1074,22 +1099,16 @@ test('wave7 subscribe.remove - unsubscribe(entries) reports one entry\'s DELETE 
     return [];
   };
   httpHooks.putHandler = () => ({ data: { context: { session_token: 'wave7-token' } } });
-  httpHooks.deleteHandler = (url) => {
-    if (url.includes('/lists/10/series/203')) {
-      return { status: 500, data: { reason: 'server error' } };
-    }
-    if (url.includes('/lists/20/series/204')) {
-      return { status: 200, data: { result: 'ok' } };
-    }
-    return { status: 404, data: {} };
-  };
+  httpHooks.postHandler = (url, payload) => (Array.isArray(payload) && payload[0] === 203
+    ? { status: 500, data: { reason: 'server error' } }
+    : { status: 200, data: { status: 'success', reason: 'Series removed' } });
 
   const wrapper = await MangaUpdatesAPIWrapper.init({
     serviceSettings: {
       'api.baseUrl': 'https://api.mangaupdates.com/v1',
       'api.endpoints.login.template': '${baseUrl}/account/login',
       'api.endpoints.listGetSeriesItem.template': '${baseUrl}/lists/series/${series_id}',
-      'api.endpoints.listRemoveSeries.template': '${baseUrl}/lists/${list_id}/series/${series_id}',
+      'api.endpoints.listRemoveSeries.template': '${baseUrl}/lists/series/delete',
     },
     httpClient: client,
     context: { cache: cacheAdapter, utils: null },

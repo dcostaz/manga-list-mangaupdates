@@ -63,7 +63,7 @@
     "api.endpoints.listUpdateSeries.throttle": 1000,
     "api.endpoints.listAddSeries.template": "${baseUrl}/lists/series",
     "api.endpoints.listAddSeries.throttle": 1000,
-    "api.endpoints.listRemoveSeries.template": "${baseUrl}/lists/${list_id}/series/${series_id}",
+    "api.endpoints.listRemoveSeries.template": "${baseUrl}/lists/series/delete",
     "api.endpoints.listRemoveSeries.throttle": 1000,
     "api.endpoints.series.template": "${baseUrl}/series/${series_id}",
     "api.endpoints.series.throttle": 1000,
