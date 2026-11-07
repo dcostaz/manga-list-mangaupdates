@@ -598,6 +598,7 @@ test('wave4 write flow - subscribeToReadingList adds missing series and applies 
   assert.equal(Boolean(ratingCall), true);
   assert.equal(cacheHooks.deletedKeys.includes('getSeriesListStatus%%61'), true);
   assert.equal(cacheHooks.userScopedDeletes.includes('getSeriesListStatus%%61'), true);
+  assert.equal(cacheHooks.userScopedDeletes.some((key) => key.startsWith('getListSeries%%')), true);
 });
 
 test('wave4 write flow - subscribeToReadingList updates existing series and tolerates rating failure', async () => {
@@ -1013,7 +1014,7 @@ test('wave7 subscribe.remove - an "exception" reply from the site is a refusal, 
 });
 
 test('wave7 subscribe.remove - unsubscribe(entries) checks the series is on a list first, then removes, array in/array out', async () => {
-  const { cacheAdapter } = createMockCacheAdapter();
+  const { cacheAdapter, hooks: cacheHooks } = createMockCacheAdapter();
   const { client, hooks: httpHooks } = createMockHttpClient();
 
   httpHooks.getHandler = (url) => {
@@ -1042,6 +1043,7 @@ test('wave7 subscribe.remove - unsubscribe(entries) checks the series is on a li
   assert.equal(results.length, 1);
   assert.equal(results[0].pluginEntryId, '201');
   assert.equal(results[0].success, true);
+  assert.equal(cacheHooks.userScopedDeletes.includes('getListSeries%%10'), true);
   assert.deepEqual(httpHooks.postCalls.find((c) => String(c.url).endsWith('/lists/series/delete')).payload, [201]);
 });
 

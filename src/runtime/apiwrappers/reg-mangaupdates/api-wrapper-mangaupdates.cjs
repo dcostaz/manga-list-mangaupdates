@@ -1285,6 +1285,24 @@ class MangaUpdatesAPIWrapper {
   }
 
   /**
+   * Drops the cached whole-list reads a write to those lists has made stale.
+   * @param {...(number|null|undefined)} listIds
+   * @returns {Promise<void>}
+   * @private
+   */
+  async _invalidateListSeries(...listIds) {
+    const cache = this._context && this._context.cache;
+    if (!cache || typeof cache.deleteValue !== 'function') {
+      return;
+    }
+    for (const listId of new Set(listIds)) {
+      if (typeof listId === 'number') {
+        await cache.deleteValue(`getListSeries%%${listId}`, { userScoped: true });
+      }
+    }
+  }
+
+  /**
    * Bulk-fetch every entry across every one of the user's MangaUpdates lists —
    * the plugin-side half of `Plan-2026Q3-plugin-sync-management-modal.md`
    * Phase 12's `getReadingList()`. One `getListSeries()` call per list_id
@@ -2232,6 +2250,7 @@ class MangaUpdatesAPIWrapper {
         };
       }
 
+      await this._invalidateListSeries(existingStatus.list_id);
       return { pluginEntryId: String(pluginEntryId), success: true };
     } catch (error) {
       return { pluginEntryId: String(pluginEntryId), success: false, error: error instanceof Error ? error.message : String(error) };
@@ -2753,6 +2772,7 @@ class MangaUpdatesAPIWrapper {
     if (cacheAfterSubscribe && typeof cacheAfterSubscribe.deleteValue === 'function') {
       await cacheAfterSubscribe.deleteValue(`getSeriesListStatus%%${numericSeriesId}`, { userScoped: true });
     }
+    await this._invalidateListSeries(targetList.list_id, existingStatus && existingStatus.list_id);
 
     return {
       success: true,
@@ -2835,6 +2855,7 @@ class MangaUpdatesAPIWrapper {
       if (cacheAfterProgress && typeof cacheAfterProgress.deleteValue === 'function') {
         await cacheAfterProgress.deleteValue(`getSeriesListStatus%%${numericSeriesId}`, { userScoped: true });
       }
+      await this._invalidateListSeries(targetListId);
     }
 
     if (typeof progress.rating === 'number' && progress.rating >= 0) {
