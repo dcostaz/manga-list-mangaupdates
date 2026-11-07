@@ -8,6 +8,7 @@ const SettingsClass = require(path.join(__dirname, 'api-settings-mangaupdates.cj
 
 /** @type {PluginModuleDescriptor} */
 const pluginModule = {
+  displayName: 'MangaUpdates',
   WrapperClass,
   SettingsClass,
 };
