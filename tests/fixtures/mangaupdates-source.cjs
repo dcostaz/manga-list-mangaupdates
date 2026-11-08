@@ -152,7 +152,8 @@ function createSource() {
         const listItem = path.match(/^\/lists\/series\/(\d+)$/);
         if (listItem && method === 'get') {
             const m = membershipOf(Number(listItem[1]));
-            return m ? { status: 200, data: m } : { status: 404, data: { status: 'exception', reason: 'Series not found on any list.' } };
+            // A series on none of the account's lists: the live site answers 404 with an empty text/html body (2026-11-08).
+            return m ? { status: 200, data: m } : { status: 404, headers: { 'content-type': 'text/html; charset=UTF-8' }, data: '' };
         }
 
         const rating = path.match(/^\/series\/(\d+)\/rating$/);

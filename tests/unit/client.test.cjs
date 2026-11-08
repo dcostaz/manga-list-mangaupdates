@@ -368,6 +368,11 @@ test('an HTML answer from MangaUpdates\' edge is a typed error, not parsed; JSON
     assert.doesNotThrow(() => htmlNormalizer({ status: 400, headers: { 'content-type': 'application/json' }, data: { error: 'bad request' } }));
 });
 
+test('an empty text/html 404 is no error page: it reaches the status handling (a series on no list, live 2026-11-08)', () => {
+    assert.doesNotThrow(() => htmlNormalizer({ status: 404, headers: { 'content-type': 'text/html; charset=UTF-8' }, data: '' }));
+    assert.doesNotThrow(() => htmlNormalizer({ status: 404, headers: { 'content-type': 'text/html' }, data: '   ' }));
+});
+
 test('a cached read of the user\'s lists still needs the credential: no credential is credential_rejected, never the cached answer (F3)', async () => {
     const { createStubAxios: stubAxios, createStubContext: stubContext, callContext: ctxOf } = require('@manga-list/plugin-sdk/testing');
     const { isPluginError: isPE } = require('@manga-list/plugin-sdk');
