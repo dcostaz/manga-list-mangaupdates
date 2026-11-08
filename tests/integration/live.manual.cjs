@@ -34,10 +34,14 @@ const fetchAxios = {
     async request(config) {
         const url = new URL(config.url);
         for (const [key, value] of Object.entries(config.params || {})) if (value !== undefined) url.searchParams.set(key, String(value));
+        // The plugin may name Content-Type itself: add one only when no casing of it is there (fetch would join two).
+        /** @type {Record<string, string>} */
+        const requestHeaders = { ...(config.headers || {}) };
         const hasBody = config.data !== undefined && config.data !== null;
+        if (hasBody && !Object.keys(requestHeaders).some((h) => h.toLowerCase() === 'content-type')) requestHeaders['content-type'] = 'application/json';
         const response = await fetch(url, {
             method: String(config.method || 'get').toUpperCase(),
-            headers: { ...(hasBody ? { 'content-type': 'application/json' } : {}), ...(config.headers || {}) },
+            headers: requestHeaders,
             body: hasBody ? JSON.stringify(config.data) : undefined,
             signal: config.signal || AbortSignal.timeout(config.timeout || 30000),
         });
