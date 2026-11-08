@@ -367,3 +367,24 @@ test('an HTML answer from MangaUpdates\' edge is a typed error, not parsed; JSON
     );
     assert.doesNotThrow(() => htmlNormalizer({ status: 400, headers: { 'content-type': 'application/json' }, data: { error: 'bad request' } }));
 });
+
+test('a cached read of the user\'s lists still needs the credential: no credential is credential_rejected, never the cached answer (F3)', async () => {
+    const { createStubAxios: stubAxios, createStubContext: stubContext, callContext: ctxOf } = require('@manga-list/plugin-sdk/testing');
+    const { isPluginError: isPE } = require('@manga-list/plugin-sdk');
+    const fsx = require('fs');
+    const px = require('path');
+    const { locateTracker: locate } = require('../../scripts/build-runtime-plugin-package.cjs');
+    const t = locate();
+    const d = require(px.join(t.dir, `plugin-${t.id}.cjs`));
+    const values = JSON.parse(fsx.readFileSync(px.join(t.dir, `${t.id}-api-settings.values.json`), 'utf8')).settings;
+    /** @type {Record<string, unknown>} */
+    const fast = { ...values, 'retry.maxAttempts': 1, 'rateLimit.perEndpoint.defaultDelay': 0 };
+    for (const k of Object.keys(fast)) if (k.endsWith('.throttle')) fast[k] = 0;
+    const instance = await d.WrapperClass.init({ context: stubContext({ axios: stubAxios(require('../fixtures/mangaupdates-source.cjs').sourceHandler) }), serviceSettings: fast });
+    const warm = await instance.getReadingList(ctxOf({ credential: { username: 'mu-alpha', password: 'alpha-pass' }, identity: 'slot-a', scope: 'user-a' }));
+    assert.ok(warm.length > 0, 'the cache is warm for this scope');
+    await assert.rejects(
+        instance.getReadingList(ctxOf({ credential: null, identity: 'slot-a', scope: 'user-a' })),
+        (e) => isPE(e) && e.code === 'credential_rejected',
+    );
+});
