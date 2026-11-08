@@ -356,11 +356,22 @@ function createClient({ settings, utils, addNormalizer }) {
         }
 
         /**
+         * A user's lists are read only with that user's credential: a cache hit would otherwise skip the
+         * authenticated request that refuses a call without one (F3: never a silent answer).
+         */
+        function requireCredential() {
+            if (view.credential === null || view.credential === undefined) {
+                throw new PluginError('credential_rejected', 'no MangaUpdates credential was presented for a read of the lists of a user');
+            }
+        }
+
+        /**
          * The account's lists (list-of-lists), cached per scope (a series write never changes it), unless `fresh`.
          * @param {{ fresh?: boolean }} [options]
          * @returns {Promise<any[]>}
          */
         async function lists(options = {}) {
+            requireCredential();
             const key = 'lists';
             if (!options.fresh) {
                 const cached = await cache.get(key);
@@ -379,6 +390,7 @@ function createClient({ settings, utils, addNormalizer }) {
          * @returns {Promise<any[]>}
          */
         async function listSeries(listId) {
+            requireCredential();
             const key = `list-series:${listId}`;
             const cached = await cache.get(key);
             if (Array.isArray(cached)) return cached;
