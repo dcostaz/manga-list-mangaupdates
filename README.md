@@ -82,5 +82,5 @@ ENABLE_REAL_SEARCH_TEST=1 MU_TEST_USERNAME=... MU_TEST_PASSWORD=... [MU_TEST_SEA
 ENABLE_REAL_LIBRARY_TEST=1 MU_TEST_USERNAME=... MU_TEST_PASSWORD=... npm run test:integration
 ```
 
-`@manga-list/plugin-sdk` is a devDependency on `file:../manga-list-plugin-sdk` (with `install-links=true`) until the
-SDK repository has a remote; the GitHub workflows cannot install it until then.
+`@manga-list/plugin-sdk` is a devDependency pinned to the contract's tag
+(`git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.0.0`).
