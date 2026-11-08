@@ -111,7 +111,8 @@ function htmlErrorMessage(html) {
 
 /**
  * MangaUpdates' edge can answer with an HTML page (a Cloudflare challenge or a backend error) where JSON belongs:
- * a typed error, never a parse of HTML.
+ * a typed error, never a parse of HTML. An empty body is no page: the site answers a series on none of the account's
+ * lists with a 404, `text/html` and nothing in it (live 2026-11-08), which is the status's own answer (`not_found`).
  * @param {any} response
  */
 function htmlNormalizer(response) {
@@ -119,7 +120,8 @@ function htmlNormalizer(response) {
     const contentType = typeof headers['content-type'] === 'string' ? headers['content-type'] : '';
     const data = response ? response.data : null;
     const isHtml = contentType.includes('text/html') || (typeof data === 'string' && /^\s*<(?:!doctype|html)/i.test(data));
-    if (isHtml && !(data instanceof Uint8Array)) {
+    const isEmpty = data === null || data === undefined || (typeof data === 'string' && !data.trim());
+    if (isHtml && !isEmpty && !(data instanceof Uint8Array)) {
         throw new PluginError('offline', `MangaUpdates backend infrastructure error: ${htmlErrorMessage(typeof data === 'string' ? data : '')}`, { status: response.status });
     }
 }
