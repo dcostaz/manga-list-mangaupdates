@@ -1,27 +1,69 @@
 {
   "pluginName": "mangaupdates",
+  "displayName": "MangaUpdates",
   "pluginType": "tracker",
-  "pluginContractVersion": "3.0.0",
+  "pluginContractVersion": "4.0.0",
   "hostApiVersion": "1.0.0",
   "iconPath": "images/mangaupdates-icon.svg",
-  "capabilities": ["credential", "search.query", "search.lookup", "enrich", "enrich.cover", "sync.pull", "sync.push", "sync.list", "subscribe.add", "subscribe.remove", "watch.entry", "watch.list", "watch.summary"],
+  "capabilities": [
+    "credential",
+    "search.query",
+    "search.lookup",
+    "enrich",
+    "enrich.cover",
+    "sync.pull",
+    "sync.push",
+    "sync.list",
+    "subscribe.add",
+    "subscribe.remove",
+    "watch.entry",
+    "watch.list",
+    "watch.summary"
+  ],
   "entrypoints": {
-    "pluginModule": "apiwrappers/reg-mangaupdates/plugin-module.cjs",
+    "pluginModule": "apiwrappers/reg-mangaupdates/plugin-mangaupdates.cjs",
     "settingsFile": "apiwrappers/reg-mangaupdates/mangaupdates-api-settings.json"
   },
   "syncOptions": {
-    "searchRequiresAuth": true,
     "statusVocabulary": {
-      "READING":      "reading",
-      "COMPLETED":    "complete",
-      "PLAN_TO_READ": "wish",
-      "ON_HOLD":      "hold",
-      "DROPPED":      "dropped",
-      "RE_READING":   null
+      "push": {
+        "READING": "read",
+        "COMPLETED": "complete",
+        "PLAN_TO_READ": "wish",
+        "ON_HOLD": "hold",
+        "DROPPED": "unfinished",
+        "RE_READING": null
+      },
+      "pull": {
+        "read": "READING",
+        "complete": "COMPLETED",
+        "wish": "PLAN_TO_READ",
+        "hold": "ON_HOLD",
+        "unfinished": "DROPPED"
+      }
     },
     "progressAxes": {
-      "pull": ["chapter", "rating"],
-      "push": ["chapter", "rating"]
+      "pull": [{ "axis": "chapter", "scale": "integer" }, { "axis": "rating", "scale": "decimal" }],
+      "push": [{ "axis": "chapter", "scale": "integer" }, { "axis": "rating", "scale": "decimal" }]
     }
+  },
+  "searchOptions": { "requiresCredential": true },
+  "credentialOptions": {
+    "fields": [
+      {
+        "key": "username",
+        "label": "Username",
+        "type": "text",
+        "required": true,
+        "description": "MangaUpdates account username."
+      },
+      {
+        "key": "password",
+        "label": "Password",
+        "type": "password",
+        "required": true,
+        "description": "Account password used for session authentication."
+      }
+    ]
   }
 }
