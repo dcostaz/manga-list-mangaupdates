@@ -20,7 +20,7 @@
       {
         "id": "network",
         "label": "Network & API",
-        "description": "Connection settings, health check endpoint, and API endpoint reference",
+        "description": "Connection settings and API endpoint reference",
         "order": 20,
         "icon": "cloud"
       },
@@ -242,26 +242,6 @@
       "category": "performance",
       "order": 790
     },
-    "api.endpoints.seriesImage.template": {
-      "type": "string",
-      "required": true,
-      "default": "${baseUrl}/series/${series_id}/image",
-      "description": "Endpoint to upload or remove a series cover image",
-      "readOnly": true,
-      "isBasic": false,
-      "category": "network",
-      "order": 285
-    },
-    "api.endpoints.seriesImage.throttle": {
-      "type": "number",
-      "required": false,
-      "default": 1000,
-      "description": "Minimum delay between seriesImage requests (milliseconds)",
-      "readOnly": true,
-      "isBasic": false,
-      "category": "performance",
-      "order": 800
-    },
     "api.endpoints.updateSerieRating.template": {
       "type": "string",
       "required": true,
@@ -283,50 +263,50 @@
       "order": 810
     },
     "statusMapping.READING": {
-      "type": "number",
-      "required": true,
-      "default": 0,
-      "description": "MangaUpdates status code for currently reading",
+      "type": "number | null",
+      "required": false,
+      "default": null,
+      "description": "Optional custom-list override for READING: the list_id of one of your own MangaUpdates lists to use instead of your 'read' list. Leave empty to use the 'read' list.",
       "readOnly": false,
       "isBasic": true,
       "category": "general",
       "order": 50
     },
     "statusMapping.COMPLETED": {
-      "type": "number",
-      "required": true,
-      "default": 2,
-      "description": "MangaUpdates status code for completed",
+      "type": "number | null",
+      "required": false,
+      "default": null,
+      "description": "Optional custom-list override for COMPLETED: the list_id of one of your own MangaUpdates lists to use instead of your 'complete' list. Leave empty to use the 'complete' list.",
       "readOnly": false,
       "isBasic": true,
       "category": "general",
       "order": 60
     },
     "statusMapping.PLAN_TO_READ": {
-      "type": "number",
-      "required": true,
-      "default": 1,
-      "description": "MangaUpdates status code for plan to read",
+      "type": "number | null",
+      "required": false,
+      "default": null,
+      "description": "Optional custom-list override for PLAN_TO_READ: the list_id of one of your own MangaUpdates lists to use instead of your 'wish' list. Leave empty to use the 'wish' list.",
       "readOnly": false,
       "isBasic": true,
       "category": "general",
       "order": 70
     },
     "statusMapping.ON_HOLD": {
-      "type": "number",
-      "required": true,
-      "default": 4,
-      "description": "MangaUpdates status code for on hold",
+      "type": "number | null",
+      "required": false,
+      "default": null,
+      "description": "Optional custom-list override for ON_HOLD: the list_id of one of your own MangaUpdates lists to use instead of your 'hold' list. Leave empty to use the 'hold' list.",
       "readOnly": false,
       "isBasic": true,
       "category": "general",
       "order": 80
     },
     "statusMapping.DROPPED": {
-      "type": "number",
-      "required": true,
-      "default": 3,
-      "description": "MangaUpdates status code for dropped",
+      "type": "number | null",
+      "required": false,
+      "default": null,
+      "description": "Optional custom-list override for DROPPED: the list_id of one of your own MangaUpdates lists to use instead of your 'unfinished' list. Leave empty to use the 'unfinished' list.",
       "readOnly": false,
       "isBasic": true,
       "category": "general",
@@ -336,7 +316,7 @@
       "type": "number | null",
       "required": false,
       "default": null,
-      "description": "Custom MangaUpdates list ID for Re-reading status. Create a custom list in MangaUpdates and paste its list_id here. Leave null to skip Re-reading sync.",
+      "description": "Optional custom-list override for RE_READING: the list_id of one of your own MangaUpdates lists. MangaUpdates has no re-reading list type, so RE_READING is synced only when this names a list.",
       "readOnly": false,
       "isBasic": true,
       "category": "general",
@@ -355,37 +335,12 @@
     "ui.icon": {
       "type": "string",
       "required": true,
-      "default": "images/manga-updates.svg",
+      "default": "images/mangaupdates-icon.svg",
       "description": "Path to icon image",
       "readOnly": true,
       "isBasic": false,
       "category": "general",
       "order": 20
-    },
-    "ui.credentialsTemplate": {
-      "type": "array",
-      "required": true,
-      "default": [
-        {
-          "key": "username",
-          "label": "Username",
-          "type": "text",
-          "required": true,
-          "description": "MangaUpdates account username."
-        },
-        {
-          "key": "password",
-          "label": "Password",
-          "type": "password",
-          "required": true,
-          "description": "Account password used for session authentication."
-        }
-      ],
-      "description": "Credential template definition for tracker auth prompts",
-      "readOnly": true,
-      "isBasic": false,
-      "category": "general",
-      "order": 30
     },
     "credentials.primary": {
       "type": "credential",
@@ -577,53 +532,6 @@
       "category": "performance",
       "order": 340
     },
-    "retry.retryableErrors": {
-      "type": "array",
-      "required": true,
-      "default": [
-        "ETIMEDOUT",
-        "ECONNRESET",
-        "ECONNREFUSED",
-        502,
-        503,
-        504,
-        429
-      ],
-      "description": "Retryable HTTP status codes and network error names (P0)",
-      "readOnly": false,
-      "isBasic": false,
-      "category": "performance",
-      "order": 360
-    },
-    "cache.enabled": {
-      "type": "boolean",
-      "required": true,
-      "default": true,
-      "description": "Enable Redis caching (P0 - CRITICAL: reduces API load)",
-      "readOnly": false,
-      "isBasic": true,
-      "category": "performance",
-      "order": 10
-    },
-    "cache.provider": {
-      "type": "string",
-      "required": true,
-      "default": "memory",
-      "description": "Cache provider: system (inherit host), memory, file, redis, or none",
-      "validation": {
-        "enum": [
-          "system",
-          "memory",
-          "file",
-          "redis",
-          "none"
-        ]
-      },
-      "readOnly": false,
-      "isBasic": false,
-      "category": "performance",
-      "order": 20
-    },
     "cache.ttl.seriesMetadata": {
       "type": "number",
       "required": true,
@@ -656,7 +564,7 @@
       "type": "number",
       "required": true,
       "default": 1800,
-      "description": "TTL for reading list contents in seconds (30m) - user modifies (P0 - CRITICAL: currently infinite)",
+      "description": "TTL for a list's contents in seconds (30m); a write to a list clears that list's cached read",
       "validation": {
         "min": 60,
         "max": 86400
@@ -670,7 +578,7 @@
       "type": "number",
       "required": true,
       "default": 1800,
-      "description": "TTL for user's list names in seconds (30m) - user creates new (P0 - currently hardcoded 1h)",
+      "description": "TTL for the account's list-of-lists in seconds (30m)",
       "validation": {
         "min": 60,
         "max": 86400
@@ -684,7 +592,7 @@
       "type": "number",
       "required": true,
       "default": 43200,
-      "description": "TTL for session token in seconds (12h) - matches API expiry (P0 - currently hardcoded)",
+      "description": "Lifetime of a MangaUpdates session token in seconds (12h, the site's own); the token is held in memory per credential slot and retired a minute early, never written to the cache",
       "validation": {
         "min": 300,
         "max": 86400
@@ -698,7 +606,7 @@
       "type": "number",
       "required": true,
       "default": 604800,
-      "description": "TTL for cover image URLs in seconds (7d) - never change (P0 - currently hardcoded 24h)",
+      "description": "TTL for cached cover image bytes in seconds (7d)",
       "validation": {
         "min": 3600,
         "max": 2592000
@@ -727,7 +635,10 @@
       "required": true,
       "default": 0.6,
       "description": "Minimum title similarity score (0-1) to classify a candidate as a fuzzy match",
-      "validation": { "min": 0.01, "max": 0.99 },
+      "validation": {
+        "min": 0.01,
+        "max": 0.99
+      },
       "readOnly": false,
       "isBasic": true,
       "category": "performance",
@@ -738,7 +649,10 @@
       "required": true,
       "default": 0.85,
       "description": "Similarity score assigned when one title slug contains the other, before Jaccard calculation",
-      "validation": { "min": 0.5, "max": 1.0 },
+      "validation": {
+        "min": 0.5,
+        "max": 1
+      },
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
@@ -749,7 +663,10 @@
       "required": true,
       "default": 5,
       "description": "Maximum ranked title candidates retained per search snapshot",
-      "validation": { "min": 1, "max": 25 },
+      "validation": {
+        "min": 1,
+        "max": 25
+      },
       "readOnly": false,
       "isBasic": true,
       "category": "performance",
@@ -760,7 +677,12 @@
       "required": true,
       "default": "first",
       "description": "Stop on first exact title match (first) or evaluate all variants for best rank (highestScore)",
-      "validation": { "enum": ["first", "highestScore"] },
+      "validation": {
+        "enum": [
+          "first",
+          "highestScore"
+        ]
+      },
       "readOnly": false,
       "isBasic": false,
       "category": "performance",
@@ -856,116 +778,6 @@
       "category": "performance",
       "order": 210
     },
-    "rateLimit.perEndpoint.login": {
-      "type": "number",
-      "required": false,
-      "default": 0,
-      "description": "Delay for login endpoint (ms) - no throttle, only called once",
-      "readOnly": true,
-      "isBasic": false,
-      "category": "performance",
-      "order": 880
-    },
-    "rateLimit.perEndpoint.getUserLists": {
-      "type": "number",
-      "required": false,
-      "default": 500,
-      "description": "Delay for getUserLists endpoint (ms) - cheap operation",
-      "readOnly": true,
-      "isBasic": false,
-      "category": "performance",
-      "order": 890
-    },
-    "rateLimit.perEndpoint.listSearch": {
-      "type": "number",
-      "required": false,
-      "default": 1000,
-      "description": "Delay for listSearch endpoint (ms) - moderate cost",
-      "readOnly": true,
-      "isBasic": false,
-      "category": "performance",
-      "order": 900
-    },
-    "rateLimit.perEndpoint.listGetSeriesItem": {
-      "type": "number",
-      "required": false,
-      "default": 1000,
-      "description": "Delay for listGetSeriesItem endpoint (ms)",
-      "readOnly": true,
-      "isBasic": false,
-      "category": "performance",
-      "order": 910
-    },
-    "rateLimit.perEndpoint.listUpdateSeries": {
-      "type": "number",
-      "required": false,
-      "default": 1000,
-      "description": "Delay for listUpdateSeries endpoint (ms)",
-      "readOnly": true,
-      "isBasic": false,
-      "category": "performance",
-      "order": 920
-    },
-    "rateLimit.perEndpoint.listAddSeries": {
-      "type": "number",
-      "required": false,
-      "default": 1000,
-      "description": "Delay for listAddSeries endpoint (ms)",
-      "readOnly": true,
-      "isBasic": false,
-      "category": "performance",
-      "order": 930
-    },
-    "rateLimit.perEndpoint.listRemoveSeries": {
-      "type": "number",
-      "required": false,
-      "default": 1000,
-      "description": "Delay for listRemoveSeries endpoint (ms)",
-      "readOnly": true,
-      "isBasic": false,
-      "category": "performance",
-      "order": 935
-    },
-    "rateLimit.perEndpoint.series": {
-      "type": "number",
-      "required": false,
-      "default": 1000,
-      "description": "Delay for series endpoint (ms)",
-      "readOnly": true,
-      "isBasic": false,
-      "category": "performance",
-      "order": 940
-    },
-    "rateLimit.perEndpoint.seriesSearch": {
-      "type": "number",
-      "required": false,
-      "default": 1500,
-      "description": "Delay for seriesSearch endpoint (ms) - expensive operation",
-      "readOnly": true,
-      "isBasic": false,
-      "category": "performance",
-      "order": 950
-    },
-    "rateLimit.perEndpoint.seriesImage": {
-      "type": "number",
-      "required": false,
-      "default": 1000,
-      "description": "Delay for seriesImage endpoint (ms)",
-      "readOnly": true,
-      "isBasic": false,
-      "category": "performance",
-      "order": 960
-    },
-    "rateLimit.perEndpoint.updateSerieRating": {
-      "type": "number",
-      "required": false,
-      "default": 1000,
-      "description": "Delay for updateSerieRating endpoint (ms)",
-      "readOnly": true,
-      "isBasic": false,
-      "category": "performance",
-      "order": 970
-    },
     "resilience.circuitBreaker.enabled": {
       "type": "boolean",
       "required": true,
@@ -1017,40 +829,6 @@
       "isBasic": false,
       "category": "performance",
       "order": 430
-    },
-    "resilience.healthCheck.enabled": {
-      "type": "boolean",
-      "required": true,
-      "default": false,
-      "description": "Enable periodic health checks (P2 - MEDIUM: disabled until Phase 10.8)",
-      "readOnly": false,
-      "isBasic": false,
-      "category": "performance",
-      "order": 500
-    },
-    "resilience.healthCheck.endpoint": {
-      "type": "string",
-      "required": false,
-      "default": "/series/1",
-      "description": "Endpoint to use for health checks (P2)",
-      "readOnly": false,
-      "isBasic": false,
-      "category": "network",
-      "order": 70
-    },
-    "resilience.healthCheck.interval": {
-      "type": "number",
-      "required": true,
-      "default": 60000,
-      "description": "Health check interval in milliseconds (P2)",
-      "validation": {
-        "min": 10000,
-        "max": 600000
-      },
-      "readOnly": false,
-      "isBasic": false,
-      "category": "performance",
-      "order": 510
     }
   }
 }
