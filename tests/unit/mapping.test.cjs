@@ -100,9 +100,21 @@ test('getReadingList: the list\'s type is the token and its id is listId; a cust
     assert.deepEqual(validateResult('getReadingList', out, { manifest: tracker.manifest }), []);
     assert.deepEqual(out.map((/** @type {any} */ e) => [e.pluginEntryId, e.status, e.listId]), [['1', 'read', 0], ['2', 'read', 0], ['4', 'complete', 2], ['5', 'read', 101]]);
     assert.deepEqual(out[0], {
-        pluginEntryId: '1', title: 'Series 1', canonicalUrl: 'https://www.mangaupdates.com/series/1/series-1', status: 'read',
+        pluginEntryId: '1', title: 'Series 1', altTitles: null, canonicalUrl: 'https://www.mangaupdates.com/series/1/series-1', status: 'read',
         chapter: 12, rating: 8.5, volume: 2, listId: 0, priority: 0, lastUpdated: new Date(1700000000 * 1000).toISOString(),
     });
+});
+
+test('getReadingList: altTitles (A30) are the associated names the row\'s series metadata carries, the primary left out; null where it carries none', () => {
+    const row = listRow(1);
+    row.metadata.series.associated = [{ title: 'Series 1' }, { title: 'The Series 1' }, { title: 'シリーズ 1' }, { title: 'The Series 1' }];
+    const out = mapping.getReadingList([{ list: LISTS[0], rows: [row, listRow(2)] }]);
+    assert.deepEqual(validateResult('getReadingList', out, { manifest: tracker.manifest }), []);
+    assert.deepEqual(out[0].altTitles, ['The Series 1', 'シリーズ 1']);
+    assert.equal(out[1].altTitles, null, 'the list read\'s series metadata has no associated names: null, never a series read');
+    const empty = listRow(3);
+    empty.metadata.series.associated = [];
+    assert.deepEqual(mapping.getReadingList([{ list: LISTS[0], rows: [empty] }])[0].altTitles, []);
 });
 
 test('getReadingList: a row without a series id is skipped; a list of a type MangaUpdates does not define has a null token', () => {

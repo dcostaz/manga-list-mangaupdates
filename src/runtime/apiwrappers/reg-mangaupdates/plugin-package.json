@@ -2,7 +2,7 @@
   "pluginName": "mangaupdates",
   "displayName": "MangaUpdates",
   "pluginType": "tracker",
-  "pluginContractVersion": "4.0.0",
+  "pluginContractVersion": "4.2.0",
   "hostApiVersion": "1.0.0",
   "iconPath": "images/mangaupdates-icon.svg",
   "capabilities": [
@@ -47,6 +47,7 @@
       "push": [{ "axis": "chapter", "scale": "integer" }, { "axis": "rating", "scale": "decimal" }]
     }
   },
+  "watchOptions": { "wholeHolding": false },
   "searchOptions": { "requiresCredential": true },
   "credentialOptions": {
     "fields": [
