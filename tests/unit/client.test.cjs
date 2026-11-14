@@ -117,6 +117,22 @@ test('getReadingList: without a total_hits, a short page ends the list', async (
     assert.deepEqual(callsTo('post', '/lists/0/search').map((c) => c.data.page), [1, 2]);
 });
 
+test('getReadingList (A25): an unreadable list-of-lists or list page is source_error, never an empty or short list', async () => {
+    const lists = await plugin({ wrap: (handler) => (config) => (String(config.url).endsWith('/lists') ? { status: 200, data: { unexpected: true } } : handler(config)) });
+    await assert.rejects(lists.instance.getReadingList(user()), (e) => isPluginError(e) && e.code === 'source_error');
+    const page = await plugin({
+        wrap: (handler) => (config) => (String(config.url).endsWith('/lists/0/search') && config.data.page === 2 ? { status: 200, data: { total_hits: 3 } } : handler(config)),
+    });
+    await assert.rejects(page.instance.getReadingList(user()), (e) => isPluginError(e) && e.code === 'source_error');
+});
+
+test('getReadingList: every entry carries altTitles (A30), null where the list row carries no associated names', async () => {
+    const { instance, axios } = await plugin();
+    const list = await instance.getReadingList(user());
+    assert.ok(list.every((/** @type {any} */ e) => 'altTitles' in e && e.altTitles === null));
+    assert.equal(axios.calls.some((c) => /\/series\/\d+$/.test(String(c.url).split('?')[0])), false, 'no series read for them');
+});
+
 test('the lists and their contents are cached per scope, never shared with another user', async () => {
     const { instance, callsTo } = await plugin();
     await instance.getReadingList(user());
@@ -224,6 +240,59 @@ test('unsubscribe: an "exception" reply is a refusal whatever its case; one entr
     assert.equal(out[1].success, true);
 });
 
+/**
+ * The fixture with removal applied: a series posted to /lists/series/delete leaves the site's membership and every
+ * list's search answer, as the live site's one-list-per-series removal does.
+ * @param {Set<number>} removed - series already off the account's lists, and those removed during the test
+ */
+const removing = (removed) => (/** @type {(config: Record<string, any>) => any} */ handler) => (/** @type {Record<string, any>} */ config) => {
+    const url = String(config.url);
+    if (url.endsWith('/lists/series/delete')) for (const id of config.data) removed.add(Number(id));
+    const item = url.split('?')[0].match(/\/lists\/series\/(\d+)$/);
+    if (item && removed.has(Number(item[1]))) return { status: 404, headers: { 'content-type': 'text/html; charset=UTF-8' }, data: '' };
+    const out = handler(config);
+    if (/\/lists\/\d+\/search$/.test(url) && out.data && Array.isArray(out.data.results)) {
+        out.data = { ...out.data, results: out.data.results.filter((/** @type {any} */ r) => !removed.has(r.record.series.id)) };
+    }
+    return out;
+};
+
+test('unsubscribe (A29): a removed series is on none of the lists the list read returns, a custom list\'s too', async () => {
+    const { instance, callsTo } = await plugin({ wrap: removing(new Set()) });
+    const before = await instance.getReadingList(user());
+    assert.ok(before.some((/** @type {any} */ e) => e.pluginEntryId === '5' && e.listId === 101), 'series 5 sits on the custom list');
+    assert.deepEqual(await instance.unsubscribe(['5', '4'], user()), [{ pluginEntryId: '5', success: true }, { pluginEntryId: '4', success: true }]);
+    assert.deepEqual(callsTo('post', '/lists/series/delete').map((c) => c.data), [[5], [4]], 'the site\'s removal names the series, never a list');
+    const after = await instance.getReadingList(user());
+    assert.deepEqual(after.map((/** @type {any} */ e) => e.pluginEntryId), ['1', '2', '3']);
+    assert.equal(callsTo('post', '/lists/101/search').length, 2, 'the custom list is read again');
+    assert.equal(callsTo('post', '/lists/2/search').length, 2, 'the typed list is read again');
+});
+
+test('unsubscribe (A29): a series already off the site but held by a cached list read is success, and that list is read again', async () => {
+    const removed = new Set();
+    const { instance, callsTo } = await plugin({ wrap: removing(removed) });
+    await instance.getReadingList(user());
+    removed.add(4); // taken off on the site itself, after the list read was cached
+    assert.deepEqual(await instance.unsubscribe(['4'], user()), [{ pluginEntryId: '4', success: true }]);
+    assert.equal(callsTo('post', '/lists/series/delete').length, 0, 'nothing to remove at the site');
+    const after = await instance.getReadingList(user());
+    assert.equal(after.some((/** @type {any} */ e) => e.pluginEntryId === '4'), false, 'the list read never returns what was removed');
+    assert.equal(callsTo('post', '/lists/2/search').length, 2, 'the list that held it is read again');
+    assert.equal(callsTo('post', '/lists/0/search').length, 2, 'a list that never held it stays cached');
+});
+
+test('unsubscribe (A25): a membership answer that names no list is that entry\'s source_error, never "already removed"', async () => {
+    const { instance, callsTo } = await plugin({
+        wrap: (handler) => (config) => (/\/lists\/series\/3(\?|$)/.test(String(config.url)) ? { status: 200, data: { unexpected: true } } : handler(config)),
+    });
+    const out = await instance.unsubscribe(['3'], user());
+    assert.equal(out[0].success, false);
+    assert.equal(out[0].error.code, 'source_error');
+    assert.equal(callsTo('post', '/lists/series/delete').length, 0);
+    await assert.rejects(instance.pullProgress('3', user()), (e) => isPluginError(e) && e.code === 'source_error');
+});
+
 // ── progress ────────────────────────────────────────────────────────────────
 
 test('pullProgress: the list type as the token, chapter, the rating from its own endpoint, time added', async () => {
@@ -312,6 +381,14 @@ test('lookup: full detail with the canonical URL (search.lookup, F12); a series 
     assert.equal(detail.pluginEntryId, '3');
     assert.equal(detail.canonicalUrl, 'https://www.mangaupdates.com/series/3/series-3');
     await assert.rejects(instance.lookup('901', system()), (e) => isPluginError(e) && e.code === 'not_found');
+});
+
+test('lookup and search (A25): an answer that is no series or no result list is source_error, never not_found or no candidates', async () => {
+    const { instance } = await plugin({
+        wrap: (handler) => (config) => (/\/series\/(3|search)$/.test(String(config.url).split('?')[0]) ? { status: 200, data: { unexpected: true } } : handler(config)),
+    });
+    await assert.rejects(instance.lookup('3', system()), (e) => isPluginError(e) && e.code === 'source_error');
+    await assert.rejects(instance.search('Series 1', undefined, system()), (e) => isPluginError(e) && e.code === 'source_error');
 });
 
 test('searchCovers: id mode fetches the known series; title mode takes the exact or fuzzy match; no match is no cover', async () => {

@@ -130,7 +130,20 @@ function seriesStateWord(raw) {
 }
 
 /**
- * @param {any} row - a /lists/{id}/search result: `{ record: { series, list_id, status, priority, time_added }, metadata: { user_rating } }`
+ * A list row's alternate titles (A30): the associated names its `metadata.series` carries, the primary left out; `null`
+ * where the row carries none (the list read's series metadata has no `associated` field), never a series read.
+ * @param {any} metadata
+ * @param {string | null} primary
+ * @returns {string[] | null}
+ */
+function listRowAltTitles(metadata, primary) {
+    const seriesMeta = metadata && metadata.series && typeof metadata.series === 'object' ? metadata.series : null;
+    if (!seriesMeta || !Array.isArray(seriesMeta.associated)) return null;
+    return altTitles({ title: primary ?? seriesMeta.title, associated: seriesMeta.associated });
+}
+
+/**
+ * @param {any} row - a /lists/{id}/search result: `{ record: { series, list_id, status, priority, time_added }, metadata: { series, user_rating } }`
  * @param {any} list
  */
 function readingListEntry(row, list) {
@@ -139,9 +152,11 @@ function readingListEntry(row, list) {
     if (!series || series.id === undefined || series.id === null) return null;
     const progress = record.status && typeof record.status === 'object' ? record.status : {};
     const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    const title = text(series.title);
     return {
         pluginEntryId: String(series.id),
-        title: text(series.title),
+        title,
+        altTitles: listRowAltTitles(metadata, title),
         canonicalUrl: text(series.url),
         status: listToken(list),
         chapter: typeof progress.chapter === 'number' ? progress.chapter : null,

@@ -5,8 +5,9 @@
 [![download-runtime-zip](https://img.shields.io/badge/download-runtime_zip-0969da?logo=github)](https://github.com/dcostaz/manga-list-mangaupdates/releases/download/runtime-latest/manga-list-mangaupdates-runtime.zip)
 
 The manga-list tracker plugin for [MangaUpdates](https://www.mangaupdates.com), the manga release and series database
-with per-user reading lists. Contract **4.0.0** (`docs/plugins/host-capability-contract.md` in the host repo), built on
-`@manga-list/plugin-sdk` in the template's shape (`Plan-2026Q4-tracker-plugin-standardization.md`, Phase 4).
+with per-user reading lists. Contract **4.2.0** (`docs/plugins/host-capability-contract.md` in the host repo), built on
+`@manga-list/plugin-sdk` in the template's shape (`Plan-2026Q4-tracker-plugin-standardization.md`, Phase 4; the sync
+refactor's amendments A27–A30, `Plan-2026Q4-sync-refactor.md`).
 
 Settings reference: [docs/settings.md](docs/settings.md). What happened to each 3.x method:
 [docs/nothing-lost.md](docs/nothing-lost.md).
@@ -51,11 +52,23 @@ wrapper (2026-07-23, 2026-11-07):
   type or a numeric list id; on pull it matches `listId` against the override before the type. RE_READING syncs only
   when its override names a list.
 - **Reading a list** is `POST /v1/lists/{list_id}/search` `{ page, perpage }`, paged until `total_hits`. The rating rides
-  on each row (`metadata.user_rating`); for one series it is `GET /v1/series/{id}/rating` (404 when unrated).
+  on each row (`metadata.user_rating`); for one series it is `GET /v1/series/{id}/rating` (404 when unrated). A row's
+  series metadata carries no associated names, so each entry's `altTitles` is `null` (A30): the list read makes no
+  series read for them, and maps them when a row carries `metadata.series.associated`.
+- **The system list is the system account's lists, not the catalogue**: the manifest declares
+  `watchOptions.wholeHolding: false` (A28), so a series missing from the `watch.list` read is not taken as missing from
+  MangaUpdates.
 - **Writes**: add `POST /v1/lists/series`, move or update `POST /v1/lists/series/update`, remove `POST
   /v1/lists/series/delete` with an array of series ids (live-confirmed 2026-11-07: the old `DELETE /lists/{list}/series/{series}` answered 405). A refused
   write answers 200 with `{ status: 'exception' }`, in any case. The chapter is an integer (fractional chapters are sent
   truncated: the manifest declares `scale: integer`); rating 0 clears the rating (`DELETE`).
+- **A removal** (`unsubscribe`, A29) asks which list holds the series (`GET /v1/lists/series/{id}`; a series sits on one
+  list of the account) and posts its id to `/lists/series/delete`, which names no list: the site takes it off whichever
+  list holds it, a custom one too. A series on no list already is success. Afterwards no cached list read still holds
+  it, so the list read never returns what a removal took off.
+- **An unreadable answer** (no list of lists, a list page with no `results`, a membership answer naming no list, a
+  series answer with no record, a search answer with no results) is `source_error`, never an empty list, "on no list"
+  or `not_found` (A25).
 - **Caching** (the host's cache, keyed by the call's scope): the list-of-lists, each list's contents (a write clears the
   lists it touched), series detail, searches (with their fetch time; `refresh` asks again) and cover bytes. A series'
   list membership is always asked fresh.
@@ -83,4 +96,4 @@ ENABLE_REAL_LIBRARY_TEST=1 MU_TEST_USERNAME=... MU_TEST_PASSWORD=... npm run tes
 ```
 
 `@manga-list/plugin-sdk` is a devDependency pinned to the contract's tag
-(`git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.0.0`).
+(`git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.2.0`).

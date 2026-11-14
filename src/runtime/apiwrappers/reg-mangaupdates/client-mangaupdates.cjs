@@ -321,8 +321,9 @@ function createClient({ settings, utils, addNormalizer }) {
                 if (cached && typeof cached === 'object') return cached;
             }
             const body = (await authed({ method: 'get', url: endpoint(settings, 'series', { series_id: seriesId }), endpoint: 'series' })).data;
+            // A series the site does not have is its 404 (not_found); an answer that is no series is unreadable (A25).
             if (!body || typeof body !== 'object' || body.series_id === undefined) {
-                throw new PluginError('not_found', `MangaUpdates has no series ${seriesId}`);
+                throw new PluginError('source_error', `MangaUpdates answered no series record for ${seriesId}`);
             }
             await cache.set(key, body, ttl('seriesMetadata', 86400));
             return body;
@@ -351,7 +352,8 @@ function createClient({ settings, utils, addNormalizer }) {
                 endpoint: 'seriesSearch',
                 timeoutKind: 'search',
             })).data;
-            const rows = body && Array.isArray(body.results) ? body.results : (Array.isArray(body) ? body : []);
+            const rows = body && Array.isArray(body.results) ? body.results : (Array.isArray(body) ? body : null);
+            if (!rows) throw new PluginError('source_error', `MangaUpdates answered no search results for '${q}'`);
             const fetchedAt = new Date().toISOString();
             if (rows.length) await cache.set(key, { rows, fetchedAt }, ttl('searchResults', 3600));
             return { query: q, rows, fetchedAt, cached: false };
@@ -380,7 +382,9 @@ function createClient({ settings, utils, addNormalizer }) {
                 if (Array.isArray(cached)) return cached;
             }
             const body = (await authed({ method: 'get', url: endpoint(settings, 'getUserLists'), endpoint: 'getUserLists' })).data;
-            const all = Array.isArray(body) ? body : (body && Array.isArray(body.results) ? body.results : []);
+            const all = Array.isArray(body) ? body : (body && Array.isArray(body.results) ? body.results : null);
+            // An answer that is no list of lists is unreadable, never an account with no lists (A25).
+            if (!all) throw new PluginError('source_error', 'MangaUpdates answered no list of the account\'s lists');
             const out = all.filter((/** @type {any} */ l) => l && typeof l === 'object' && typeof l.list_id === 'number');
             await cache.set(key, out, ttl('userLists', 1800));
             return out;
@@ -400,7 +404,11 @@ function createClient({ settings, utils, addNormalizer }) {
             const rows = [];
             for (let page = 1; page <= MAX_LIST_PAGES; page += 1) {
                 const body = (await authed({ method: 'post', url: endpoint(settings, 'listSearch', { list_id: listId }), data: { page, perpage: perPage }, endpoint: 'listSearch' })).data;
-                const results = body && Array.isArray(body.results) ? body.results : [];
+                // A page that is no page is unreadable: never a short list (A25).
+                if (!body || !Array.isArray(body.results)) {
+                    throw new PluginError('source_error', `MangaUpdates answered no results for page ${page} of list ${listId}`);
+                }
+                const results = body.results;
                 rows.push(...results);
                 if (results.length === 0) break;
                 const total = body && typeof body.total_hits === 'number' ? body.total_hits : null;
@@ -418,14 +426,31 @@ function createClient({ settings, utils, addNormalizer }) {
         }
 
         /**
+         * A series off the account's lists is off every cached list read too: each list whose cached rows still hold
+         * it (the site removed it elsewhere since the read) is read again next time, so the list read never returns
+         * what a removal took off (A29). Reads the list-of-lists, never a list's contents.
+         * @param {number} seriesId
+         */
+        async function forgetSeries(seriesId) {
+            for (const list of await lists()) {
+                const rows = await cache.get(`list-series:${list.list_id}`);
+                if (Array.isArray(rows) && rows.some((/** @type {any} */ r) => r && r.record && r.record.series && Number(r.record.series.id) === seriesId)) {
+                    await invalidateLists(list.list_id);
+                }
+            }
+        }
+
+        /**
          * Which list a series is on, or null when on none (404). Always asked of the site: a sync reads it fresh.
+         * An answer that names no list is unreadable, never "on none" (A25).
          * @param {number} seriesId
          * @returns {Promise<any | null>}
          */
         async function membership(seriesId) {
             try {
                 const body = (await authed({ method: 'get', url: endpoint(settings, 'listGetSeriesItem', { series_id: seriesId }), endpoint: 'listGetSeriesItem' })).data;
-                return body && typeof body === 'object' && typeof body.list_id === 'number' ? body : null;
+                if (body && typeof body === 'object' && typeof body.list_id === 'number') return body;
+                throw new PluginError('source_error', `MangaUpdates answered no list for series ${seriesId}`);
             } catch (error) {
                 if (isNotFound(error)) return null;
                 throw error;
@@ -600,18 +625,22 @@ function createClient({ settings, utils, addNormalizer }) {
                 return { list };
             },
             /**
-             * The site's real removal (live-confirmed 2026-11-07): the series id posted to /lists/series/delete. On
-             * no list already is success (§2: idempotent). @param {string} id
+             * The site's real removal (live-confirmed 2026-11-07): the series id posted to /lists/series/delete, which
+             * names no list: the site takes the series off whichever list holds it, a custom one too (a series sits on
+             * one list of the account; `GET /lists/series/{id}` names it). On no list already is success (§2:
+             * idempotent). Either way no cached list read still holds it afterwards (A29). @param {string} id
              */
             async unsubscribe(id) {
                 const seriesId = Number(id);
                 // An id that names no series is on no list: already removed.
                 if (!Number.isFinite(seriesId) || seriesId <= 0) return {};
                 const current = await membership(seriesId);
-                if (!current) return {};
-                const response = await authed({ method: 'post', url: endpoint(settings, 'listRemoveSeries'), data: [seriesId], endpoint: 'listRemoveSeries' });
-                assertAccepted(response, `removing series ${seriesId}`);
-                await invalidateLists(current.list_id);
+                if (current) {
+                    const response = await authed({ method: 'post', url: endpoint(settings, 'listRemoveSeries'), data: [seriesId], endpoint: 'listRemoveSeries' });
+                    assertAccepted(response, `removing series ${seriesId}`);
+                    await invalidateLists(current.list_id);
+                }
+                await forgetSeries(seriesId);
                 return {};
             },
             /** The live state: asked of the site, and the cached copy renewed. @param {string} id */
