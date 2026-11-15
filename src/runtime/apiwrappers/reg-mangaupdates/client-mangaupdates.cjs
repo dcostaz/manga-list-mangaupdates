@@ -305,28 +305,35 @@ function createClient({ settings, utils, addNormalizer }) {
         const authed = (config) => http.authedRequest({ ...config, headers: { 'Content-Type': 'application/json', ...(config.headers || {}) } });
 
         /**
-         * The series detail, from the cache when fresh (per scope), unless `fresh`.
+         * The series detail, read through the cache (per scope, contract 4.3.0, A31): from the cache when fresh unless
+         * `fresh`, with whether it came from there and when it was fetched.
+         * @param {string | number} id
+         * @param {{ fresh?: boolean }} [options]
+         * @returns {Promise<{ value: any, cached: boolean, fetchedAt: string | null }>}
+         */
+        async function seriesRead(id, options = {}) {
+            const seriesId = Number(id);
+            if (!Number.isFinite(seriesId) || seriesId <= 0) {
+                throw new PluginError('not_found', `'${id}' is not a MangaUpdates series id`);
+            }
+            return cache.readThrough(`series:${seriesId}`, { fresh: options.fresh === true, ttlSeconds: ttl('seriesMetadata', 86400) }, async () => {
+                const body = (await authed({ method: 'get', url: endpoint(settings, 'series', { series_id: seriesId }), endpoint: 'series' })).data;
+                // A series the site does not have is its 404 (not_found); an answer that is no series is unreadable (A25).
+                if (!body || typeof body !== 'object' || body.series_id === undefined) {
+                    throw new PluginError('source_error', `MangaUpdates answered no series record for ${seriesId}`);
+                }
+                return body;
+            });
+        }
+
+        /**
+         * The series detail alone.
          * @param {string | number} id
          * @param {{ fresh?: boolean }} [options]
          * @returns {Promise<any>}
          */
         async function series(id, options = {}) {
-            const seriesId = Number(id);
-            if (!Number.isFinite(seriesId) || seriesId <= 0) {
-                throw new PluginError('not_found', `'${id}' is not a MangaUpdates series id`);
-            }
-            const key = `series:${seriesId}`;
-            if (!options.fresh) {
-                const cached = await cache.get(key);
-                if (cached && typeof cached === 'object') return cached;
-            }
-            const body = (await authed({ method: 'get', url: endpoint(settings, 'series', { series_id: seriesId }), endpoint: 'series' })).data;
-            // A series the site does not have is its 404 (not_found); an answer that is no series is unreadable (A25).
-            if (!body || typeof body !== 'object' || body.series_id === undefined) {
-                throw new PluginError('source_error', `MangaUpdates answered no series record for ${seriesId}`);
-            }
-            await cache.set(key, body, ttl('seriesMetadata', 86400));
-            return body;
+            return (await seriesRead(id, options)).value;
         }
 
         /**
@@ -504,7 +511,8 @@ function createClient({ settings, utils, addNormalizer }) {
             /** @param {string} id */
             lookup: (id) => series(id),
             /** @param {string} id */
-            enrich: (id) => series(id),
+            /** A31: the source's own answer when the user asked for it. @param {string} id @param {{ refresh?: boolean }} [options] */
+            enrich: (id, options) => seriesRead(id, { fresh: !!(options && options.refresh === true) }),
             /**
              * Id mode fetches the known series; title mode searches and takes the best exact or fuzzy match (the 3.x
              * cover search), or nothing. @param {{ title?: string }} query @param {{ pluginEntryId?: string } | null} [options]
