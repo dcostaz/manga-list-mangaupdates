@@ -70,8 +70,13 @@ test('lookup and enrich: the contribution — titles, contributors with roles, g
     assert.equal(detail.seriesType, 'Manga');
     assert.equal(detail.seriesStatus, 'ongoing');
     assert.deepEqual(detail.sourceLinks, [{ siteId: 'mangaupdates', siteLabel: 'MangaUpdates', seriesUrl: 'https://www.mangaupdates.com/series/2/series-2', isPrimary: true }]);
-    assert.equal(mapping.enrich(series(2)).contribution.pluginEntryId, '2');
-    assert.equal('canonicalUrl' in mapping.enrich(series(2)).contribution, false);
+    assert.equal(mapping.enrich({ value: series(2), cached: false, fetchedAt: null }).contribution.pluginEntryId, '2');
+    assert.equal('canonicalUrl' in mapping.enrich({ value: series(2), cached: false, fetchedAt: null }).contribution, false);
+    // A31: a cached read says so, and when it was fetched; one cached before the time was kept says it was cached alone.
+    const cached = mapping.enrich({ value: series(2), cached: true, fetchedAt: '2026-11-15T00:00:00.000Z' }).contribution;
+    assert.deepEqual([cached.cached, cached.fetchedAt], [true, '2026-11-15T00:00:00.000Z']);
+    const old = mapping.enrich({ value: series(2), cached: true, fetchedAt: null }).contribution;
+    assert.deepEqual([old.cached, 'fetchedAt' in old], [true, false]);
 });
 
 test('contribution: series status from the status text or the completed flag', () => {

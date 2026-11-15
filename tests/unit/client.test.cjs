@@ -133,6 +133,19 @@ test('getReadingList: every entry carries altTitles (A30), null where the list r
     assert.equal(axios.calls.some((c) => /\/series\/\d+$/.test(String(c.url).split('?')[0])), false, 'no series read for them');
 });
 
+test('enrich (4.3.0, A31): a repeat is answered from the cache with its fetch time; refresh asks MangaUpdates again', async () => {
+    const { instance, callsTo } = await plugin();
+    const live = await instance.enrich(['2'], user());
+    assert.deepEqual([live[0].contribution.cached, live[0].contribution.fetchedAt], [undefined, undefined], 'a live answer says nothing');
+    const cached = await instance.enrich(['2'], user());
+    assert.equal(cached[0].contribution.cached, true);
+    assert.match(String(cached[0].contribution.fetchedAt), /^\d{4}-\d{2}-\d{2}T/);
+    assert.equal(callsTo('get', '/series/2').length, 1);
+    const refreshed = await instance.enrich(['2'], { refresh: true }, user());
+    assert.equal(refreshed[0].contribution.cached, undefined);
+    assert.equal(callsTo('get', '/series/2').length, 2);
+});
+
 test('the lists and their contents are cached per scope, never shared with another user', async () => {
     const { instance, callsTo } = await plugin();
     await instance.getReadingList(user());

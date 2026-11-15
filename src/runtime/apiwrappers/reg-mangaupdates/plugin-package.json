@@ -2,7 +2,7 @@
   "pluginName": "mangaupdates",
   "displayName": "MangaUpdates",
   "pluginType": "tracker",
-  "pluginContractVersion": "4.2.1",
+  "pluginContractVersion": "4.3.0",
   "hostApiVersion": "1.0.0",
   "iconPath": "images/mangaupdates-icon.svg",
   "capabilities": [
