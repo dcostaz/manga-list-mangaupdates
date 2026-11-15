@@ -5,7 +5,7 @@
 [![download-runtime-zip](https://img.shields.io/badge/download-runtime_zip-0969da?logo=github)](https://github.com/dcostaz/manga-list-mangaupdates/releases/download/runtime-latest/manga-list-mangaupdates-runtime.zip)
 
 The manga-list tracker plugin for [MangaUpdates](https://www.mangaupdates.com), the manga release and series database
-with per-user reading lists. Contract **4.2.0** (`docs/plugins/host-capability-contract.md` in the host repo), built on
+with per-user reading lists. Contract **4.2.1** (`docs/plugins/host-capability-contract.md` in the host repo), built on
 `@manga-list/plugin-sdk` in the template's shape (`Plan-2026Q4-tracker-plugin-standardization.md`, Phase 4; the sync
 refactor's amendments A27–A30, `Plan-2026Q4-sync-refactor.md`).
 
@@ -96,4 +96,4 @@ ENABLE_REAL_LIBRARY_TEST=1 MU_TEST_USERNAME=... MU_TEST_PASSWORD=... npm run tes
 ```
 
 `@manga-list/plugin-sdk` is a devDependency pinned to the contract's tag
-(`git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.2.0`).
+(`git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.2.1`).
