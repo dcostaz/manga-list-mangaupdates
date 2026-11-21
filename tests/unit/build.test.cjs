@@ -29,7 +29,7 @@ test('the package holds the three layers, the manifest twice, the merged setting
         const beside = JSON.parse(await zip.file(`${reg}/plugin-package.json`).async('string'));
         assert.deepEqual(root, beside);
         assert.equal(root.entrypoints.pluginModule, `${reg}/plugin-${id}.cjs`);
-        assert.equal(root.pluginContractVersion, '4.3.0');
+        assert.equal(root.pluginContractVersion, '4.4.0');
         const settings = JSON.parse(await zip.file(`${reg}/${id}-api-settings.json`).async('string'));
         assert.deepEqual(Object.keys(settings).sort(), ['metadata', 'schema', 'settings']);
         assert.equal(settings.metadata.componentName, 'MangaUpdatesAPI', 'the settings component keeps its name');

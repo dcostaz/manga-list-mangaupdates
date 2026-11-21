@@ -5,9 +5,16 @@
 [![download-runtime-zip](https://img.shields.io/badge/download-runtime_zip-0969da?logo=github)](https://github.com/dcostaz/manga-list-mangaupdates/releases/download/runtime-latest/manga-list-mangaupdates-runtime.zip)
 
 The manga-list tracker plugin for [MangaUpdates](https://www.mangaupdates.com), the manga release and series database
-with per-user reading lists. Contract **4.3.0** (`docs/plugins/host-capability-contract.md` in the host repo), built on
+with per-user reading lists. Contract **4.4.0** (`docs/plugins/host-capability-contract.md` in the host repo), built on
 `@manga-list/plugin-sdk` in the template's shape (`Plan-2026Q4-tracker-plugin-standardization.md`, Phase 4; the sync
 refactor's amendments A27–A30, `Plan-2026Q4-sync-refactor.md`).
+
+4.4.0 (Tracker Search, `Plan-2026Q4-interface-refactor-tracker-search.md`; contract §2.4.1) adds: each search
+candidate's `detail`, the record as far as the search row holds it (A32); `lookup`'s `display` part, everything the one
+series read holds, from titles and status text to categories with their votes, rank and list counts, the Bayesian
+rating, related series and recommendations (A33); `cancelled` as a series status (A34); and `options.allHits`, set only
+by Tracker Search, which asks MangaUpdates for up to `search.resultCap` hits with no series-type filter and filters
+none of them out (A35, A36). The searching account's own list entry (`metadata.user_list`) is never mapped.
 
 Settings reference: [docs/settings.md](docs/settings.md). What happened to each 3.x method:
 [docs/nothing-lost.md](docs/nothing-lost.md).
@@ -70,8 +77,8 @@ wrapper (2026-07-23, 2026-11-07):
   series answer with no record, a search answer with no results) is `source_error`, never an empty list, "on no list"
   or `not_found` (A25).
 - **Caching** (the host's cache, keyed by the call's scope): the list-of-lists, each list's contents (a write clears the
-  lists it touched), series detail, searches (with their fetch time; `refresh` asks again) and cover bytes. A series'
-  list membership is always asked fresh.
+  lists it touched), series detail, searches (with their fetch time; `refresh` asks again; an `allHits` search on its
+  own key, which names the result cap) and cover bytes. A series' list membership is always asked fresh.
 - **watch.summary** answers from each series' own record (status text, latest chapter, last update), one lookup per
   entry: never from the user's lists (Decision 3).
 
@@ -96,4 +103,4 @@ ENABLE_REAL_LIBRARY_TEST=1 MU_TEST_USERNAME=... MU_TEST_PASSWORD=... npm run tes
 ```
 
 `@manga-list/plugin-sdk` is a devDependency pinned to the contract's tag
-(`git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.3.0`).
+(`git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.4.0`).

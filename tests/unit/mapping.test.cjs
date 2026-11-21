@@ -179,3 +179,90 @@ test('the statusMapping override is the custom-list list_id, empty by default (D
         assert.equal(values[`statusMapping.${status}`], null, status);
     }
 });
+
+// ── contract 4.4.0: the record, the display part, cancelled, every hit (A32–A35) ───────────────────────────────
+
+const { NOVEL_ID, CANCELLED_ID, SYSTEM_USER_LIST } = require('../fixtures/mangaupdates-source.cjs');
+
+test('search (A32): each candidate carries its record as far as the search row holds it, without its identity', () => {
+    const out = mapping.search({ query: 'Series 1', rows: [searchRow(1, 'The Series 1 Matched')], fetchedAt: null, cached: false, policy, allHits: false });
+    assert.deepEqual(validateResult('search', out), []);
+    const detail = out[0].detail;
+    for (const key of ['pluginEntryId', 'canonicalUrl', 'syncedAt', 'cached', 'fetchedAt']) assert.equal(key in detail, false, `${key} is the candidate's`);
+    assert.equal(detail.displayTitle, 'Series 1');
+    assert.equal(detail.description, 'A series.');
+    assert.equal(detail.seriesType, 'Manga');
+    assert.equal(detail.year, 2020);
+    assert.deepEqual(detail.genres, ['Action', 'Drama']);
+    assert.equal('seriesStatus' in detail, false, 'the search row holds no status: absent, never unknown');
+    assert.deepEqual(detail.display.ratings, [{ source: 'MangaUpdates', value: 7.5, scale: 10, votes: 651 }]);
+    assert.deepEqual(detail.display.dates, { updated: '2025-10-01T00:00:00.000Z' });
+    assert.deepEqual(detail.display.cover.sizes.map((/** @type {{ url: string }} */ s) => s.url), ['https://cdn.mangaupdates.com/image/i1.jpg', 'https://cdn.mangaupdates.com/image/thumb/i1.jpg']);
+    assert.deepEqual(detail.display.titles[0], { title: 'Series 1', kind: 'main' });
+    assert.ok(detail.display.titles.some((/** @type {{ title: string, kind: string }} */ t) => t.title === 'The Series 1 Matched' && t.kind === 'alternate'), "the matched title is one of its titles; that it matched is the host's mark");
+    for (const key of ['statusText', 'tags', 'popularity', 'licensing', 'relations', 'recommendations', 'magazine']) {
+        assert.equal(key in detail.display, false, `${key}: the series read's, not the search row's`);
+    }
+});
+
+test("search (card brief §5 rule 11): the searching account's own list entry (metadata.user_list) is never in a candidate", () => {
+    const row = searchRow(1);
+    assert.deepEqual(row.metadata.user_list, SYSTEM_USER_LIST, "the fixture row carries the system account's entry");
+    const [candidate] = mapping.search({ query: 'Series 1', rows: [row], fetchedAt: null, cached: false, policy, allHits: true });
+    const json = JSON.stringify(candidate);
+    assert.equal(json.includes('user_list'), false);
+    assert.equal(json.includes('list_id'), false);
+    assert.equal(json.includes('"chapter"'), false);
+});
+
+test('search (A35): with allHits every row comes back ranked, the exact-match rule and candidateLimit skipped; without it, as before', () => {
+    const rows = [searchRow(1), searchRow(12), searchRow(NOVEL_ID), ...[2, 3, 4, 5, 6, 7].map((id) => searchRow(id))];
+    const filtered = mapping.search({ query: 'Series 1', rows, fetchedAt: null, cached: false, policy, allHits: false });
+    assert.deepEqual(filtered.map((/** @type {{ pluginEntryId: string }} */ c) => c.pluginEntryId), ['1'], 'an exact match answers alone (exactMatchPolicy first)');
+    const every = mapping.search({ query: 'Series 1', rows, fetchedAt: null, cached: false, policy, allHits: true });
+    assert.equal(every.length, rows.length);
+    assert.equal(every[0].pluginEntryId, '1');
+    assert.ok(every.some((/** @type {{ pluginEntryId: string }} */ c) => c.pluginEntryId === String(NOVEL_ID)));
+    assert.deepEqual(validateResult('search', every), []);
+});
+
+test('lookup (A33): the display part in full from the one series read', () => {
+    const detail = mapping.lookup(series(2));
+    assert.deepEqual(validateResult('lookup', detail), []);
+    const d = detail.display;
+    assert.deepEqual(d.titles, [{ title: 'Series 2', kind: 'main' }, { title: 'The Series 2', kind: 'alternate' }, { title: 'シリーズ 2', kind: 'alternate' }]);
+    assert.deepEqual(d.descriptions, [{ text: 'A series.' }]);
+    assert.deepEqual(d.cover, { sizes: [{ url: 'https://cdn.mangaupdates.com/image/i2.jpg', width: 400 }, { url: 'https://cdn.mangaupdates.com/image/thumb/i2.jpg' }] });
+    assert.equal(d.statusText, '5 Volumes (Ongoing)');
+    assert.deepEqual(d.chapters, { latest: 42 });
+    assert.equal(d.magazine, 'A Weekly Magazine');
+    assert.deepEqual(d.tags, [{ name: 'Adapted to Anime', votes: 5 }, { name: 'Elf', votes: 3 }]);
+    assert.deepEqual(d.ratings, [{ source: 'MangaUpdates', value: 7.5, scale: 10, votes: 651 }]);
+    assert.deepEqual(d.popularity, { rank: 26, lists: 3841 + 920 + 44 + 83 + 477 });
+    assert.deepEqual(d.licensing, { licensed: true, anime: true });
+    assert.deepEqual(d.relations, [{ relation: 'Spin-Off', title: 'Series 77', pluginEntryId: '77', url: 'https://www.mangaupdates.com/series/25/series-77' }]);
+    assert.deepEqual(d.recommendations.map((/** @type {{ pluginEntryId: string }} */ r) => r.pluginEntryId), ['78', '79'], "the users' and the category-based, a series once");
+    assert.deepEqual(detail.authors, [{ name: 'An Author', type: 'Author' }, { name: 'An Artist', type: 'Artist' }], "the role is the contributor's own type");
+    assert.equal(detail.seriesStatus, 'ongoing');
+});
+
+test('lookup (A34, A32): a cancelled series is cancelled, its status text kept line by line; what it does not hold is absent', () => {
+    const detail = mapping.lookup(series(CANCELLED_ID));
+    assert.deepEqual(validateResult('lookup', detail), []);
+    assert.equal(detail.seriesStatus, 'cancelled');
+    assert.equal(detail.display.statusText, '12 Chapters (Cancelled)\nS1: 8 Chapters (1-8)\nS2: 4 Chapters (9-12');
+    assert.deepEqual(detail.display.descriptions, [{ text: 'From a publisher: a series.\n\nIn two parts & more.' }], 'plain text, line breaks kept');
+    assert.deepEqual(detail.display.licensing, { licensed: false }, 'an empty anime range says nothing');
+    for (const key of ['ratings', 'popularity', 'tags', 'relations', 'recommendations', 'magazine']) {
+        assert.equal(key in detail.display, false, `${key}: not held, so absent`);
+    }
+});
+
+test("contribution (A34): cancelled from the status text; the first line is the series' own, the lines after it its parts", () => {
+    assert.equal(mapping._seriesStatus({ status: '12 Chapters (Cancelled)' }), 'cancelled');
+    assert.equal(mapping._seriesStatus({ status: '3 Volumes (Discontinued)' }), 'cancelled');
+    assert.equal(mapping._seriesStatus({ status: '570 Chapters (Complete)\nS1: 41 Chapters (1-41)' }), 'completed');
+    assert.equal(mapping._seriesStatus({ status: '12 Chapters (Ongoing)<BR>S1: 12 Chapters (Complete)' }), 'ongoing');
+    assert.equal(mapping._seriesStatus({ status: '12 Chapters\nS1: 12 Chapters (Hiatus)' }), 'hiatus', 'a first line with no state falls back to the whole text');
+    assert.equal(mapping._plainText('a<br>b<BR/>c &amp; d &#39;e&#39;'), "a\nb\nc & d 'e'");
+});

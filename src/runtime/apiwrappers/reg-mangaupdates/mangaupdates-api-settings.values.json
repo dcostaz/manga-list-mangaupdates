@@ -102,6 +102,7 @@
     "search.containmentScore": 0.85,
     "search.candidateLimit": 5,
     "search.exactMatchPolicy": "first",
+    "search.resultCap": 25,
     "rateLimit.global.enabled": true,
     "rateLimit.global.maxConcurrent": 5,
     "rateLimit.global.maxPerSecond": 10,

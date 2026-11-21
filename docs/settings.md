@@ -94,6 +94,7 @@ A series' list membership is never cached: a pull or a write always asks the sit
 | `search.containmentScore` | 0.85 | Similarity given when one title contains the other |
 | `search.candidateLimit` | 5 | Most candidates a search returns |
 | `search.exactMatchPolicy` | `first` | `first`: an exact title match answers alone; `highestScore`: every ranked candidate comes back |
+| `search.resultCap` | 25 | How many hits a Tracker Search asks MangaUpdates for (`options.allHits`, 1–25); the four keys above govern every other search |
 
 ## Connection, retry, rate limit, circuit breaker (SDK-read)
 

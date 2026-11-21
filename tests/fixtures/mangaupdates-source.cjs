@@ -12,6 +12,11 @@
  *  - a list's series are served FIXTURE_PAGE per page whatever `perpage` asks, with `total_hits`, so the three-entry
  *    Reading List is two pages and the client must page.
  *  - writes answer `{ status: 'success' }`; the membership itself is fixed (tests that need a change wrap the handler).
+ *  - `POST /series/search` answers in the openapi's shape (`SeriesSearchResponseV1`): a short record per hit, the
+ *    matched title, and `metadata.user_list`, the searching account's own entry. It honours `perpage` and the `type`
+ *    include filter, so the filtered search (manga, manhua, manhwa; 25) and the every-hit one (A35: no type, the result
+ *    cap) answer differently: *Series 1* finds a novel only without the filter, *Many* holds 40 hits.
+ *  - series NOVEL_ID is a novel; CANCELLED_ID is a cancelled series whose status text runs over several lines (A34).
  */
 
 const BASE = 'https://api.mangaupdates.com/v1';
@@ -43,35 +48,93 @@ const LIBRARY = Object.freeze(Object.keys(MEMBERSHIP));
 /** @param {number} id */
 const seriesUrl = (id) => `https://www.mangaupdates.com/series/${id.toString(36)}/series-${id}`;
 
-/** A `GET /series/{id}` answer. @param {number} id */
+/** The novel *Series 1* finds only without the type filter. */
+const NOVEL_ID = 40;
+/** A cancelled series, its status text over several lines (card brief §9.2's shape). */
+const CANCELLED_ID = 41;
+/** The series ids the query *Many* finds: more than the filtered search keeps, more than a small result cap. */
+const MANY_IDS = Object.freeze(Array.from({ length: 40 }, (_, i) => 100 + i));
+
+/** A `GET /series/{id}` answer (`SeriesModelV1`). @param {number} id */
 function series(id) {
-    return {
+    const base = {
         series_id: id,
-        title: `Series ${id}`,
+        title: id === NOVEL_ID ? 'Series 1 (Novel)' : `Series ${id}`,
         url: seriesUrl(id),
         associated: [{ title: `The Series ${id}` }, { title: `シリーズ ${id}` }],
         description: 'A series.',
         image: { url: { original: `${CDN}/i${id}.jpg`, thumb: `${CDN}/thumb/i${id}.jpg` }, height: 600, width: 400 },
-        type: 'Manga',
+        type: id === NOVEL_ID ? 'Novel' : 'Manga',
         year: '2020',
         bayesian_rating: 7.5,
+        rating_votes: 651,
         genres: [{ genre: 'Action' }, { genre: 'Drama' }],
+        categories: [
+            { series_id: id, category: 'Adapted to Anime', votes: 5, votes_plus: 7, votes_minus: 2, added_by: 1 },
+            { series_id: id, category: 'Elf', votes: 3, votes_plus: 3, votes_minus: 0, added_by: 1 },
+        ],
         latest_chapter: 42,
+        forum_id: 1,
         status: '5 Volumes (Ongoing)',
+        licensed: true,
         completed: false,
+        anime: { start: 'Vol 1, Chap 1 (S1)', end: 'Vol 7, Chap 60 (S1)' },
+        related_series: [{ relation_id: 1, relation_type: 'Spin-Off', related_series_id: 77, related_series_name: 'Series 77', related_series_url: seriesUrl(77), triggered_by_relation_id: 0 }],
         authors: [{ name: 'An Author', author_id: 1, type: 'Author' }, { name: 'An Artist', author_id: 2, type: 'Artist' }],
         publishers: [{ publisher_name: 'A Publisher', publisher_id: 3, type: 'Original', notes: '' }],
+        publications: [{ publication_name: 'A Weekly Magazine', publisher_name: 'A Publisher', publisher_id: 3 }],
+        recommendations: [{ series_name: 'Series 78', series_url: seriesUrl(78), series_id: 78, series_image: {}, weight: 3 }],
+        category_recommendations: [
+            { series_name: 'Series 78', series_url: seriesUrl(78), series_id: 78, series_image: {}, weight: 2 },
+            { series_name: 'Series 79', series_url: seriesUrl(79), series_id: 79, series_image: {}, weight: 1 },
+        ],
+        rank: {
+            position: { week: 26, month: 22, three_months: 32, six_months: 31, year: 26 },
+            old_position: { week: 27, month: 20, three_months: 30, six_months: 33, year: 28 },
+            lists: { reading: 3841, wish: 920, complete: 44, unfinished: 83, custom: 477 },
+        },
         last_updated: { timestamp: 1759276800, as_rfc3339: '2025-10-01T00:00:00+00:00', as_string: 'October 1st, 2025 12:00am UTC' },
+        admin: { approved: true },
+    };
+    if (id !== CANCELLED_ID) return base;
+    // What a series without a rating, rank, anime, categories or relations answers: empty values, which the mapping
+    // treats as not held.
+    return {
+        ...base,
+        title: 'A Cancelled Series',
+        description: '<i>From a publisher</i>: a series.<BR><BR>In two parts &amp; more.',
+        status: '12 Chapters (Cancelled)\nS1: 8 Chapters (1-8)\nS2: 4 Chapters (9-12',
+        licensed: false,
+        anime: { start: '', end: '' },
+        categories: [],
+        related_series: [],
+        recommendations: [],
+        category_recommendations: [],
+        publications: [],
+        rank: { position: { week: 0 }, lists: {} },
+        bayesian_rating: 0,
+        rating_votes: 0,
     };
 }
 
-/** A `POST /series/search` result row. @param {number} id */
-function searchRow(id) {
+/** The searching account's own entry, which a search answer carries (the system account's, under a system search). */
+const SYSTEM_USER_LIST = Object.freeze({ series: { id: 1 }, list_id: 0, list_type: 'read', list_icon: 'read', status: { volume: 2, chapter: 12 }, priority: 0, time_added: { timestamp: 1700000000 } });
+
+/**
+ * A `POST /series/search` result row (`SeriesSearchResponseV1.results[]`). `associated` is not in the openapi's
+ * search record (the live sample of 2026-11-19 holds none); the row keeps it for the 3.x alias match's tests.
+ * @param {number} id
+ * @param {string} [hitTitle] - the title the search matched, the series' own when not given
+ */
+function searchRow(id, hitTitle) {
     const s = series(id);
     return {
-        record: { series_id: id, title: s.title, url: s.url, associated: s.associated, image: s.image, type: s.type, year: s.year },
-        hit_title: s.title,
-        metadata: { user_list: null },
+        record: {
+            series_id: id, title: s.title, url: s.url, associated: s.associated, description: s.description, image: s.image, type: s.type,
+            year: s.year, bayesian_rating: s.bayesian_rating, rating_votes: s.rating_votes, genres: s.genres, last_updated: s.last_updated,
+        },
+        hit_title: hitTitle || s.title,
+        metadata: { user_list: id === 1 ? SYSTEM_USER_LIST : null, user_genre_highlights: [] },
     };
 }
 
@@ -169,8 +232,14 @@ function createSource() {
 
         if (path === '/series/search' && method === 'post') {
             const q = String(data && data.search || '').toLowerCase();
-            const ids = q.includes('series 1') ? [1, 12] : q.includes('nothing') ? [] : [1];
-            return { status: 200, data: { total_hits: ids.length, page: 1, per_page: 25, results: ids.map(searchRow) } };
+            const hits = q.includes('series 1') ? [1, 12, NOVEL_ID] : q.includes('nothing') ? [] : q.includes('many') ? [...MANY_IDS]
+                : q.includes('cancelled') ? [CANCELLED_ID] : [1];
+            // `type` keeps the series of those types (case aside); `perpage` is the page size, the site's 25 without it.
+            const types = Array.isArray(data && data.type) ? data.type.map((/** @type {string} */ t) => String(t).toLowerCase()) : null;
+            const typed = types ? hits.filter((id) => types.includes(String(series(id).type).toLowerCase())) : hits;
+            const perPage = Number(data && data.perpage) > 0 ? Number(data.perpage) : 25;
+            const results = typed.slice(0, perPage).map((id) => searchRow(id));
+            return { status: 200, data: { total_hits: typed.length, page: 1, per_page: perPage, results } };
         }
         const detail = path.match(/^\/series\/(\d+)$/);
         if (detail && method === 'get') {
@@ -202,6 +271,10 @@ module.exports = {
     MEMBERSHIP,
     LIBRARY,
     FIXTURE_PAGE,
+    NOVEL_ID,
+    CANCELLED_ID,
+    MANY_IDS,
+    SYSTEM_USER_LIST,
     series,
     searchRow,
     listRow,

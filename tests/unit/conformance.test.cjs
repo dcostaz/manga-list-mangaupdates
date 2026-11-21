@@ -48,6 +48,10 @@ test('MangaUpdates passes the contract suite with 0 failures', async () => {
     for (const id of ['sync.list.returns-the-whole-library', 'F3.getReadingList-without-a-credential-is-rejected', 'F11.no-identity-leaks-across-calls', 'F11.cache-keys-name-the-scope', 'result.summarizeEntries', 'result.pullProgress', 'result.testCredentials', 'status.subscribe-refuses-a-host-status', 'F12.search.lookup.has-lookup']) {
         assert.ok(report.passed.includes(id), `passed ${id}`);
     }
+    // 4.4.0: run against this plugin's own fixture source, so nothing is skipped.
+    assert.ok(report.passed.includes('A35.allHits-answers-at-least-the-filtered-hits-and-at-most-the-cap'), 'allHits asks the source for more (A35)');
+    assert.ok(report.passed.includes('A38.every-candidate-resolves-by-lookup'));
+    assert.deepEqual(report.skipped, []);
 });
 
 module.exports = { INPUTS, INPUTS_JSON };
