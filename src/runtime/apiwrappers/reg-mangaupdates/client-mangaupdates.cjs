@@ -26,9 +26,71 @@
  *    (`{ rating }`, 404 when unrated, verified live 2026-07-23); the list read carries it as `metadata.user_rating`.
  *  - a cover URL is CDN-assigned (`image.url.original`), never derivable from the id.
  *  - the edge can answer an HTML page (Cloudflare) where JSON belongs.
+ *  - a title search is `POST /series/search` `{ search, stype, type?, perpage }` (openapi `SeriesSearchRequestV1`:
+ *    `type` is an include filter on the series' type, `perpage` the page size); each result is `{ record, hit_title,
+ *    metadata }`, `record` a short series (`SeriesModelSearchV1`: no associated names, no status) and `metadata.user_list`
+ *    the searching account's own list entry, which is the system account's under a system-side search.
  */
 
-const { PluginError, isPluginError } = require('@manga-list/plugin-sdk');
+const { PluginError, isPluginError, resultCapOf } = require('@manga-list/plugin-sdk');
+
+// ── MangaUpdates' own shapes (openapi https://api.mangaupdates.com/openapi.yaml, read 2026-11-20) ──────────────────
+// Every field optional: the site omits what it does not hold, and the code checks each value before it reads it.
+
+/** @typedef {{ timestamp?: number, as_rfc3339?: string, as_string?: string }} MuTime */
+/** @typedef {{ url?: { original?: string, thumb?: string }, height?: number, width?: number }} MuImage */
+/** @typedef {{ week?: number, month?: number, three_months?: number, six_months?: number, year?: number }} MuRankPosition */
+/** @typedef {{ reading?: number, wish?: number, complete?: number, unfinished?: number, custom?: number }} MuRankLists */
+/** @typedef {{ position?: MuRankPosition, old_position?: MuRankPosition, lists?: MuRankLists }} MuRank */
+/** @typedef {{ title?: string }} MuAssociated */
+/** @typedef {{ genre?: string }} MuGenre */
+/** @typedef {{ category?: string, votes?: number, votes_plus?: number, votes_minus?: number }} MuCategory */
+/** @typedef {{ relation_type?: string, related_series_id?: number, related_series_name?: string, related_series_url?: string }} MuRelatedSeries */
+/** @typedef {{ series_name?: string, series_url?: string, series_id?: number, weight?: number }} MuRecommendation */
+/** @typedef {{ publication_name?: string, publisher_name?: string }} MuPublication */
+/** @typedef {{ start?: string, end?: string }} MuAnime */
+/** @typedef {{ name?: string, author_id?: number, url?: string, type?: string }} MuAuthor */
+/** @typedef {{ publisher_name?: string, publisher_id?: number, url?: string, type?: string, notes?: string }} MuPublisher */
+
+/**
+ * A search result's short series (`SeriesModelSearchV1`). `associated` is not in the openapi's search record; it is
+ * read where a row carries it (the 3.x wrapper's alias match).
+ * @typedef {{
+ *   series_id?: number, title?: string, url?: string, description?: string, image?: MuImage, type?: string,
+ *   year?: string | number, bayesian_rating?: number, rating_votes?: number, genres?: MuGenre[],
+ *   latest_chapter?: number, rank?: MuRank, last_updated?: MuTime, associated?: MuAssociated[]
+ * }} MuSeriesSearchRecord
+ */
+
+/**
+ * One series read (`GET /series/{id}`, `SeriesModelV1`): the search record's fields and the rest. `year_released` and
+ * `release_year` are not in the openapi: the 3.x mapper's year fallbacks, kept.
+ * @typedef {MuSeriesSearchRecord & {
+ *   categories?: MuCategory[], status?: string, licensed?: boolean, completed?: boolean, anime?: MuAnime,
+ *   related_series?: MuRelatedSeries[], recommendations?: MuRecommendation[], category_recommendations?: MuRecommendation[],
+ *   publications?: MuPublication[], authors?: MuAuthor[], publishers?: MuPublisher[],
+ *   year_released?: string | number, release_year?: string | number
+ * }} MuSeries
+ */
+
+/**
+ * A `POST /series/search` result. `metadata.user_list` is the searching account's own entry: never mapped.
+ * @typedef {{ record?: MuSeriesSearchRecord, hit_title?: string, metadata?: { user_list?: unknown } }} MuSearchRow
+ */
+
+/** @typedef {{ fuzzyThreshold: number, containmentScore: number, candidateLimit: number, exactMatchPolicy: 'first' | 'highestScore' }} MuSearchPolicy */
+
+/**
+ * The client's search answer, which the mapping ranks: the rows, whether they came from the cache, the `search.*`
+ * policy, and whether the call asked for every hit (A35: the mapping then filters nothing).
+ * @typedef {{ query: string, rows: MuSearchRow[], fetchedAt: string | null, cached: boolean, policy: MuSearchPolicy, allHits: boolean }} MuSearchAnswer
+ */
+
+/** The series types a search without `allHits` keeps (the 3.x search's filter; a Link a source search still applies it). */
+const FILTERED_SEARCH_TYPES = Object.freeze(['manga', 'manhua', 'manhwa']);
+
+/** The page size of a search without `allHits` (the 3.x search's). */
+const FILTERED_SEARCH_PER_PAGE = 25;
 
 /** A session token is retired this long before its lifetime ends, so no request leaves with one about to die. */
 const TOKEN_EXPIRY_SKEW_MS = 60 * 1000;
@@ -271,6 +333,7 @@ function rankRows(query, rows, policy) {
 /**
  * The settings `search.*` the ranking reads.
  * @param {Record<string, unknown>} settings
+ * @returns {MuSearchPolicy}
  */
 function searchPolicy(settings) {
     const num = (/** @type {string} */ key, /** @type {number} */ fallback) => {
@@ -338,32 +401,45 @@ function createClient({ settings, utils, addNormalizer }) {
 
         /**
          * One title search, from the cache when fresh (per scope) unless `refresh`.
+         *
+         * With `allHits` (A35, A36; Tracker Search only) the request asks for the plugin's result cap (`perpage` =
+         * `resultCapOf(settings)`) and drops the series-type filter: Tracker Search shows every hit, a novel or a
+         * doujinshi among them (card brief §4.2, §9.1). Its answer is cached under its own key, which names the cap, so a
+         * filtered answer is never reused as an every-hit one, nor the reverse. Without it, the request and the key are
+         * the 3.x search's (Link a source depends on them, Decision 6).
          * @param {string} query
-         * @param {{ refresh?: boolean } | null} [options]
-         * @returns {Promise<{ query: string, rows: any[], fetchedAt: string | null, cached: boolean }>}
+         * @param {import('@manga-list/plugin-sdk').PluginSearchOptions | null} [options]
+         * @returns {Promise<{ query: string, rows: MuSearchRow[], fetchedAt: string | null, cached: boolean, allHits: boolean }>}
          */
         async function searchRows(query, options) {
             const q = typeof query === 'string' ? query.trim() : '';
-            if (!q) return { query: q, rows: [], fetchedAt: null, cached: false };
-            const key = `search:${sanitize(q)}`;
+            const allHits = !!(options && options.allHits === true);
+            if (!q) return { query: q, rows: [], fetchedAt: null, cached: false, allHits };
+            const cap = resultCapOf(settings);
+            const key = allHits ? `search-all:${cap}:${sanitize(q)}` : `search:${sanitize(q)}`;
             if (!(options && options.refresh === true)) {
-                const hit = /** @type {any} */ (await cache.get(key));
-                if (hit && Array.isArray(hit.rows) && hit.rows.length) {
-                    return { query: q, rows: hit.rows, fetchedAt: typeof hit.fetchedAt === 'string' ? hit.fetchedAt : null, cached: true };
+                const hit = await cache.get(key);
+                if (hit && typeof hit === 'object' && Array.isArray(hit.rows) && hit.rows.length) {
+                    return { query: q, rows: hit.rows, fetchedAt: typeof hit.fetchedAt === 'string' ? hit.fetchedAt : null, cached: true, allHits };
                 }
             }
+            const data = allHits
+                ? { search: q, stype: 'title', perpage: cap }
+                : { search: q, stype: 'title', type: [...FILTERED_SEARCH_TYPES], perpage: FILTERED_SEARCH_PER_PAGE };
             const body = (await authed({
                 method: 'post',
                 url: endpoint(settings, 'seriesSearch'),
-                data: { search: q, stype: 'title', type: ['manga', 'manhua', 'manhwa'], perpage: 25 },
+                data,
                 endpoint: 'seriesSearch',
                 timeoutKind: 'search',
             })).data;
-            const rows = body && Array.isArray(body.results) ? body.results : (Array.isArray(body) ? body : null);
-            if (!rows) throw new PluginError('source_error', `MangaUpdates answered no search results for '${q}'`);
+            const answered = body && Array.isArray(body.results) ? body.results : (Array.isArray(body) ? body : null);
+            if (!answered) throw new PluginError('source_error', `MangaUpdates answered no search results for '${q}'`);
+            /** @type {MuSearchRow[]} */
+            const rows = allHits ? answered.slice(0, cap) : answered;
             const fetchedAt = new Date().toISOString();
             if (rows.length) await cache.set(key, { rows, fetchedAt }, ttl('searchResults', 3600));
-            return { query: q, rows, fetchedAt, cached: false };
+            return { query: q, rows, fetchedAt, cached: false, allHits };
         }
 
         /**
@@ -506,11 +582,14 @@ function createClient({ settings, utils, addNormalizer }) {
         }
 
         return {
-            /** One title search; the answer carries the `search.*` policy the mapping ranks by. @param {string} query @param {{ refresh?: boolean } | null} [options] */
+            /**
+             * One title search; the answer carries the `search.*` policy the mapping ranks by, and whether the call asked
+             * for every hit (A35). @param {string} query @param {import('@manga-list/plugin-sdk').PluginSearchOptions | null} [options]
+             * @returns {Promise<MuSearchAnswer>}
+             */
             search: async (query, options) => ({ ...(await searchRows(query, options)), policy }),
-            /** @param {string} id */
+            /** The series read: everything MangaUpdates holds for one series, in one request (A33). @param {string} id @returns {Promise<MuSeries>} */
             lookup: (id) => series(id),
-            /** @param {string} id */
             /** A31: the source's own answer when the user asked for it. @param {string} id @param {{ refresh?: boolean }} [options] */
             enrich: (id, options) => seriesRead(id, { fresh: !!(options && options.refresh === true) }),
             /**

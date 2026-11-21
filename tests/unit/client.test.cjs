@@ -382,6 +382,65 @@ test('search: with exactMatchPolicy highestScore every ranked candidate comes ba
     assert.deepEqual(out.map((/** @type {any} */ c) => [c.pluginEntryId, c.confidence]), [['1', 1], ['12', 0.85]]);
 });
 
+test('search without allHits: the 3.x request, the type filter and 25 per page (Link a source, Decision 6)', async () => {
+    const { instance, callsTo } = await plugin();
+    const out = await instance.search('Many', undefined, system());
+    assert.deepEqual(callsTo('post', '/series/search')[0].data, { search: 'Many', stype: 'title', type: ['manga', 'manhua', 'manhwa'], perpage: 25 });
+    assert.equal(out.length, values['search.candidateLimit'], 'its own filtering: at most search.candidateLimit');
+});
+
+test('search with allHits (A35, A36): perpage is the result cap, no type filter, every hit answered, none filtered out', async () => {
+    const { instance, callsTo } = await plugin({ settings: { 'search.resultCap': 10 } });
+    const out = await instance.search('Many', { allHits: true }, system());
+    assert.deepEqual(callsTo('post', '/series/search')[0].data, { search: 'Many', stype: 'title', perpage: 10 });
+    assert.equal(out.length, 10, 'every hit the source answered, up to the cap');
+    assert.ok(out.every((/** @type {any} */ c) => c.detail && c.detail.displayTitle), 'each with its record (A32)');
+    const { instance: byDefault, callsTo: defaultCalls } = await plugin();
+    assert.equal((await byDefault.search('Many', { allHits: true }, system())).length, 25, 'the cap is 25 by default');
+    assert.equal(defaultCalls('post', '/series/search')[0].data.perpage, 25);
+});
+
+test('search with allHits: a novel the type filter hides is a Tracker Search result (card brief §4.2, §9.1)', async () => {
+    const { instance } = await plugin();
+    const filtered = await instance.search('Series 1', { refresh: true }, system());
+    const every = await instance.search('Series 1', { allHits: true }, system());
+    assert.equal(filtered.some((/** @type {any} */ c) => c.pluginEntryId === '40'), false);
+    const novel = every.find((/** @type {any} */ c) => c.pluginEntryId === '40');
+    assert.ok(novel);
+    assert.equal(novel.detail.seriesType, 'Novel');
+});
+
+test('search cache (Decision 28): a filtered answer is never reused as an every-hit one, nor the reverse; each is cached on its own key', async () => {
+    const { instance, callsTo } = await plugin();
+    const filtered = await instance.search('Series 1', undefined, system());
+    const every = await instance.search('Series 1', { allHits: true }, system());
+    assert.equal(callsTo('post', '/series/search').length, 2, 'the every-hit search asked the site');
+    assert.equal(every[0].cached, undefined);
+    assert.equal(every.length, 3);
+    const filteredAgain = await instance.search('Series 1', undefined, system());
+    const everyAgain = await instance.search('Series 1', { allHits: true }, system());
+    assert.equal(callsTo('post', '/series/search').length, 2, 'each repeat from its own cache entry');
+    assert.deepEqual(filteredAgain.map((/** @type {any} */ c) => c.pluginEntryId), filtered.map((/** @type {any} */ c) => c.pluginEntryId));
+    assert.deepEqual(everyAgain.map((/** @type {any} */ c) => c.pluginEntryId), every.map((/** @type {any} */ c) => c.pluginEntryId));
+    assert.equal(everyAgain[0].cached, true);
+    const { instance: capped, callsTo: cappedCalls } = await plugin({ settings: { 'search.resultCap': 2 } });
+    await capped.search('Series 1', { allHits: true }, system());
+    assert.equal((await capped.search('Series 1', { allHits: true }, system())).length, 2);
+    assert.equal(cappedCalls('post', '/series/search').length, 1);
+});
+
+test('lookup (A33, A38): every candidate resolves by lookup, its display part from the one series read', async () => {
+    const { instance, callsTo } = await plugin();
+    const every = await instance.search('Series 1', { allHits: true }, system());
+    for (const candidate of every) {
+        const detail = await instance.lookup(candidate.pluginEntryId, system());
+        assert.equal(detail.pluginEntryId, candidate.pluginEntryId);
+        assert.equal(detail.display.statusText, '5 Volumes (Ongoing)');
+    }
+    assert.equal(callsTo('get', '/series/1').length, 1, 'one request per series');
+    assert.equal((await instance.lookup('41', system())).seriesStatus, 'cancelled');
+});
+
 test('search: a blank query asks nothing', async () => {
     const { instance, axios } = await plugin();
     assert.deepEqual(await instance.search('   ', undefined, system()), []);
