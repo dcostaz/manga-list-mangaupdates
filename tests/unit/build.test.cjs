@@ -36,6 +36,7 @@ test('the package holds the three layers, the manifest twice, the merged setting
         for (const deleted of ['cache.enabled', 'cache.provider', 'retry.retryableErrors', 'ui.credentialsTemplate', 'resilience.healthCheck.enabled', 'rateLimit.perEndpoint.series', 'api.endpoints.seriesImage.template']) {
             assert.equal(settings.settings[deleted], undefined, `${deleted} does not ship (Decision 5)`);
         }
+        assert.ok(!('credentials.primary' in settings.schema) && !('credentials.primary' in settings.settings), 'credentials.primary does not ship: a credential is never a setting');
         for (const status of ['READING', 'COMPLETED', 'PLAN_TO_READ', 'ON_HOLD', 'DROPPED', 'RE_READING']) {
             assert.equal(settings.settings[`statusMapping.${status}`], null, `statusMapping.${status}: the custom-list override is empty by default`);
         }

@@ -3,7 +3,7 @@
     "componentName": "MangaUpdatesAPI",
     "description": "MangaUpdates runtime tracker package settings definition (tracker-specific extension)",
     "version": "1.0.0",
-    "lastModified": "2026-05-24T18:37:44.219Z",
+    "lastModified": "2026-11-25T00:00:00.000Z",
     "lifecycle": {
       "bootstrapPhase": "early",
       "dependencies": [],
@@ -13,7 +13,7 @@
       {
         "id": "general",
         "label": "Tracker Identity & Protocol",
-        "description": "Tracker display identity, authentication, and status protocol values",
+        "description": "Tracker display identity and status protocol values",
         "order": 10,
         "icon": "settings"
       },
@@ -341,33 +341,6 @@
       "isBasic": false,
       "category": "general",
       "order": 20
-    },
-    "credentials.primary": {
-      "type": "credential",
-      "required": false,
-      "default": null,
-      "label": "MangaUpdates Credentials",
-      "description": "Securely store the MangaUpdates username and password used by the tracker wrapper.",
-      "helpText": "Opens the encrypted credential modal so operators can set MangaUpdates credentials directly from the Trackers settings tab.",
-      "isBasic": true,
-      "readOnly": false,
-      "implementationStatus": "implemented",
-      "category": "general",
-      "order": 40,
-      "tags": [
-        "credentials",
-        "tracker",
-        "security"
-      ],
-      "uiHints": {
-        "widget": "credential",
-        "serviceName": "mangaupdates",
-        "credentialType": "tracker",
-        "credentialKeys": [
-          "username",
-          "password"
-        ]
-      }
     },
     "connection.timeout.connect": {
       "type": "number",

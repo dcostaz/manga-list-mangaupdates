@@ -13,7 +13,7 @@ name is `MangaUpdatesAPI`. Which keys survive, and who reads them, is
 |---|---|---|
 | SDK-read | `connection.timeout.*`, `connection.pool.*`, `retry.enabled`, `retry.maxAttempts`, `retry.backoff.*`, `rateLimit.global.*`, `rateLimit.perEndpoint.{enabled,defaultDelay}`, `api.endpoints.<name>.throttle`, `resilience.circuitBreaker.*` | `@manga-list/plugin-sdk`'s HTTP layer, on every request |
 | Client-read | `api.baseUrl`, `api.endpoints.<name>.template`, `api.endpoints.listSearch.perPage`, `cache.ttl.*`, `search.*` | `client-mangaupdates.cjs` |
-| Host-read | `ui.label`, `ui.icon`, `credentials.primary`, `statusMapping.*` | the host (its UI; the custom-list override, contract §2.2) |
+| Host-read | `ui.label`, `ui.icon`, `statusMapping.*` | the host (its UI; the custom-list override, contract §2.2) |
 
 ---
 
@@ -23,7 +23,6 @@ name is `MangaUpdatesAPI`. Which keys survive, and who reads them, is
 |-----|---------|-------|
 | `ui.label` | `MangaUpdates` | Display name shown in the host UI |
 | `ui.icon` | `images/mangaupdates-icon.svg` | The manifest's `iconPath` |
-| `credentials.primary` | `null` | The host's credential button; the secret lives in the host's keychain, never here |
 
 The credential's fields are the manifest's `credentialOptions.fields` (contract §1.4): `username` (text) and
 `password` (password), the keys the 3.x `credentialSchema` used, so a stored credential keeps working.
@@ -111,3 +110,6 @@ The retried failures are the SDK's standard set (network errors, 429 with `Retry
 `resilience.healthCheck.*` (never had a consumer), `ui.credentialsTemplate` (the manifest's credential fields replace
 it), every `rateLimit.perEndpoint.<name>` (duplicated `api.endpoints.<name>.throttle`), and `api.endpoints.seriesImage.*`
 (its methods, cover upload and removal, are no contract offer and left with the 3.x wrapper).
+
+`credentials.primary` was removed later (Manga List's `Plan-2026Q4-plugin-credential-setting-cleanup.md`): a credential
+is never a setting. Its fields are the manifest's `credentialOptions.fields`, and the host keeps it in its keychain.
